@@ -1,0 +1,8 @@
+{
+  "name": "John Test",
+  "email": "johntest999@example.com",
+  "password": "password123",
+  "role": "donor",
+  "bloodType": "O+",
+  "phone": "1234567890"
+}
