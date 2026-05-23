@@ -16,6 +16,8 @@ const resolveApiBaseUrl = () => {
 
 export const API_BASE_URL = resolveApiBaseUrl();
 export const API_ORIGIN = API_BASE_URL.replace(/\/api$/, '');
+// Used by Socket.IO client — the root server URL without /api suffix
+export const BACKEND_BASE = API_ORIGIN;
 
 export const apiUrl = (path: string) => {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;

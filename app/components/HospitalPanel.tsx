@@ -552,7 +552,6 @@ export function HospitalPanel({ user }: HospitalPanelProps) {
               </button>
             </div>
 
-            {/* Blood requests - Filtered */}
             {(() => {
               const filteredRequests = 
                 bloodRequestFilter === 'all'
@@ -564,7 +563,26 @@ export function HospitalPanel({ user }: HospitalPanelProps) {
                       return true;
                     });
 
-              if (filteredRequests.length === 0) {
+              // Sort requests: Pending first, then by priorityScore descending, then by date descending
+              const sortedRequests = [...filteredRequests].sort((a, b) => {
+                const statusA = a.status || 'Pending';
+                const statusB = b.status || 'Pending';
+                
+                if (statusA === 'Pending' && statusB !== 'Pending') return -1;
+                if (statusA !== 'Pending' && statusB === 'Pending') return 1;
+                
+                if (statusA === 'Pending' && statusB === 'Pending') {
+                  const scoreA = a.priorityScore || 0;
+                  const scoreB = b.priorityScore || 0;
+                  if (scoreB !== scoreA) {
+                    return scoreB - scoreA;
+                  }
+                }
+                
+                return new Date(b.submittedAt || b.createdAt).getTime() - new Date(a.submittedAt || a.createdAt).getTime();
+              });
+
+              if (sortedRequests.length === 0) {
                 return (
                   <div className="space-y-4">
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
@@ -580,7 +598,7 @@ export function HospitalPanel({ user }: HospitalPanelProps) {
 
               return (
                 <div className="space-y-4">
-                  {filteredRequests.map((req) => (
+                  {sortedRequests.map((req) => (
                     <div key={req._id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                     <div className="flex items-start justify-between mb-4">
                       <div>
@@ -595,10 +613,17 @@ export function HospitalPanel({ user }: HospitalPanelProps) {
                       </div>
                       <div className="text-right text-sm text-gray-500">
                         <p>{new Date(req.submittedAt || req.createdAt).toLocaleDateString()}</p>
-                        <span className={`inline-block mt-2 px-3 py-1 text-xs font-semibold rounded-full border ${getStatusBadgeColor(req.status || 'Pending')}`}>
-                          {getStatusIcon(req.status || 'Pending')}
-                          {req.status || 'Pending'}
-                        </span>
+                        <div className="flex flex-col items-end gap-1.5 mt-2">
+                          <span className={`inline-block px-3 py-1 text-xs font-semibold rounded-full border ${getStatusBadgeColor(req.status || 'Pending')}`}>
+                            {getStatusIcon(req.status || 'Pending')}
+                            {req.status || 'Pending'}
+                          </span>
+                          {req.priorityScore !== undefined && req.priorityScore !== null && (
+                            <span className="inline-block px-3 py-1 text-xs font-bold rounded-full bg-red-100 text-red-800 border border-red-200">
+                              Score: {req.priorityScore}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 

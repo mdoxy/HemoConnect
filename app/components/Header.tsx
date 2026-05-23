@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Droplets, Bell, User, ChevronDown, LogOut, LayoutDashboard, UserCircle } from 'lucide-react';
 
-type Page = 'home' | 'find-blood' | 'become-donor' | 'hospitals' | 'hospitals-list' | 'education' | 'donor-dashboard' | 'requestor-dashboard' | 'hospital-panel' | 'hospital-profile' | 'profile' | 'notifications';
+type Page = 'home' | 'find-blood' | 'become-donor' | 'hospitals' | 'hospitals-list' | 'education' | 'donor-dashboard' | 'requestor-dashboard' | 'hospital-panel' | 'hospital-profile' | 'profile' | 'notifications' | 'emergency-feed';
 
 interface UserData {
   name: string;
@@ -101,6 +101,18 @@ export function Header({ currentPage, onNavigate, user, onLogin, onSignup, onLog
               }`}
             >
               Awareness / Learn
+            </button>
+            {/* Live Emergency Feed — visible to all */}
+            <button
+              onClick={() => onNavigate('emergency-feed')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-1.5 ${
+                currentPage === 'emergency-feed'
+                  ? 'text-red-600 bg-red-50'
+                  : 'text-gray-700 hover:text-red-600 hover:bg-gray-50'
+              }`}
+            >
+              <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+              Live Feed
             </button>
           </nav>
 

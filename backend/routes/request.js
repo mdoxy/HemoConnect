@@ -6,6 +6,10 @@ import Request from '../models/Request.js';
 import BloodRequest from '../models/BloodRequest.js';
 import Requestor from '../models/Requestor.js';
 import User from '../models/User.js';
+import { calculatePriority } from '../services/priority/calculatePriority.js';
+import { addToQueue } from '../services/queue/priorityQueue.js';
+import { scoreToPriorityLevel } from './nearby.js';
+import { io } from '../server.js';
 
 const router = express.Router();
 
@@ -61,6 +65,8 @@ const handleCreateRequest = async (req, res) => {
       requesterName,
       requesterEmail,
       requesterPhone,
+      latitude,   // GPS coords submitted by frontend
+      longitude,
     } = req.body;
 
     // Validate required fields
@@ -114,6 +120,33 @@ const handleCreateRequest = async (req, res) => {
       });
     }
 
+    // ── Compute hoursLeft from requiredDate for rule evaluation ─────────────
+    let hoursLeft = null;
+    const emergency = req.body.emergency === 'true' || req.body.emergency === true;
+    if (requiredDate) {
+      const diff = new Date(requiredDate) - new Date();
+      hoursLeft = diff > 0 ? diff / (1000 * 60 * 60) : 0;
+    }
+
+    // ── Calculate priority score via Rule-Based Scoring Engine ───────────────
+    const priorityScore = await calculatePriority({
+      bloodGroup,
+      emergency,
+      hoursLeft,
+      unitsRequired: parseInt(unitsRequired),
+      reason: reason || '',
+    });
+
+    console.log(`[RequestController] Priority score for new request: ${priorityScore}`);
+
+    const priorityLevel = scoreToPriorityLevel(priorityScore);
+
+    // Build GeoJSON location if GPS coords were provided by frontend
+    const locationData =
+      latitude != null && longitude != null && !isNaN(Number(latitude)) && !isNaN(Number(longitude))
+        ? { type: 'Point', coordinates: [Number(longitude), Number(latitude)] }
+        : undefined;
+
     // Create new blood request
     const newRequest = new Request({
       requestorId,
@@ -132,6 +165,11 @@ const handleCreateRequest = async (req, res) => {
       idProofFilePath: req.files.idProofFile ? req.files.idProofFile[0].path : null,
       status: 'Pending',
       submittedAt: new Date(),
+      priorityScore,
+      priorityLevel,
+      emergency,
+      hoursLeft,
+      ...(locationData && { location: locationData }),
     });
 
     const savedRequest = await newRequest.save();
@@ -158,11 +196,41 @@ const handleCreateRequest = async (req, res) => {
     const savedLegacyRequest = await legacyRequest.save();
     console.log('Blood request saved successfully:', savedRequest._id, savedLegacyRequest._id);
 
+    // ── Push to in-memory priority queue ─────────────────────────────────────
+    addToQueue({
+      requestId: String(savedRequest._id),
+      score: priorityScore,
+      createdAt: savedRequest.submittedAt,
+      bloodGroup,
+    });
+
+    // ── Emit Socket.IO event so live dashboards update instantly ───────────────
+    try {
+      io.emit('new-request', {
+        _id: savedRequest._id,
+        patientName,
+        bloodGroup,
+        unitsRequired: parseInt(unitsRequired),
+        hospitalName,
+        priorityScore,
+        priorityLevel,
+        emergency,
+        hoursLeft,
+        location: locationData || null,
+        submittedAt: savedRequest.submittedAt,
+        status: 'Pending',
+      });
+    } catch (socketErr) {
+      console.warn('[RequestController] Socket.IO emit failed (non-fatal):', socketErr.message);
+    }
+
     res.status(201).json({
       success: true,
       message: 'Blood request submitted successfully',
       requestId: savedRequest._id,
       bloodRequestId: savedLegacyRequest._id,
+      priorityScore,
+      priorityLevel,
       request: savedRequest,
     });
   } catch (error) {

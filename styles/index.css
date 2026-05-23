@@ -1,2 +1,12 @@
 @import './tailwind.css';
 @import './theme.css';
+
+/* Emergency Dashboard — critical card pulse animation */
+@keyframes criticalPulse {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.3), 0 0 20px rgba(239, 68, 68, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.6), 0 0 40px rgba(239, 68, 68, 0.3);
+  }
+}

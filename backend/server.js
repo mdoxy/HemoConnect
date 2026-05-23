@@ -1,4 +1,6 @@
 import express from 'express';
+import http from 'http';
+import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -7,7 +9,12 @@ import { fileURLToPath } from 'url';
 import authRoutes from './routes/auth.js';
 import donorRoutes from './routes/donor.js';
 import requestRoutes from './routes/request.js';
+import priorityRoutes from './routes/priority.js';
+import nearbyRoutes from './routes/nearby.js';
 import connectDB from './config/db.js';
+import { startEscalationJob } from './cron/escalationJob.js';
+import { rebuildQueue } from './services/queue/priorityQueue.js';
+import Request from './models/Request.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,6 +35,23 @@ envFiles.forEach((filePath) => {
 });
 
 const app = express();
+const httpServer = http.createServer(app);
+
+// ── Socket.IO ─────────────────────────────────────────────────────────────
+export const io = new SocketIOServer(httpServer, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST'],
+  },
+});
+
+io.on('connection', (socket) => {
+  console.log(`[Socket.IO] Client connected: ${socket.id}`);
+  socket.on('disconnect', () => {
+    console.log(`[Socket.IO] Client disconnected: ${socket.id}`);
+  });
+});
+
 let hasStarted = false;
 
 // Middleware
@@ -79,6 +103,8 @@ app.use('/api/donor', donorRoutes);
 app.use('/api/donorapplications', donorRoutes);
 app.use('/api/request', requestRoutes);
 app.use('/api/requests', requestRoutes);
+app.use('/api/priority', priorityRoutes);
+app.use('/api/nearby', nearbyRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -106,6 +132,28 @@ const startServer = async () => {
 
   app.locals.dbConnected = dbConnected;
 
+  // ── Priority System Startup ────────────────────────────────────────────
+  if (dbConnected) {
+    // 1. Rebuild the in-memory priority queue from pending DB requests
+    try {
+      const pending = await Request.find({ status: 'Pending' }).select(
+        '_id priorityScore submittedAt bloodGroup'
+      );
+      const items = pending.map((r) => ({
+        requestId: String(r._id),
+        score: r.priorityScore || 0,
+        createdAt: r.submittedAt,
+        bloodGroup: r.bloodGroup,
+      }));
+      rebuildQueue(items);
+    } catch (e) {
+      console.warn('[Startup] Could not rebuild priority queue:', e.message);
+    }
+
+    // 2. Start the escalation cron job (runs every 30 minutes)
+    startEscalationJob();
+  }
+
   const basePort = Number(process.env.PORT) || 5000;
   const allowPortFallback = process.env.PORT_FALLBACK === 'true';
   const maxAttempts = allowPortFallback ? 10 : 1;
@@ -115,7 +163,7 @@ const startServer = async () => {
 
     try {
       await new Promise((resolve, reject) => {
-        const server = app.listen(port, () => {
+        const server = httpServer.listen(port, () => {
           hasStarted = true;
           console.log(`Server running on http://localhost:${port}`);
           resolve(server);

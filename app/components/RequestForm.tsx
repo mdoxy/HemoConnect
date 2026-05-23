@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { User, Phone, Mail, MapPin, Droplet, FileText, Building2, CheckCircle, X, Upload } from 'lucide-react';
 import { isValidIndianMobile, normalizeIndianMobile, getPhoneValidationErrorMessage } from '../utils/validation';
 import { Hospital } from '../utils/csvParser';
@@ -28,6 +28,17 @@ export function RequestForm({ selectedBank, onClose, onNavigate, user }: Request
   const [prescriptionFile, setPrescriptionFile] = useState<File | null>(null);
   const [idProofFile, setIdProofFile] = useState<File | null>(null);
   const [formErrors, setFormErrors] = useState<{ prescription?: string }>({});
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  
+  // Auto-detect GPS on mount for the live emergency feed
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => {} // silent fail — location is optional
+      );
+    }
+  }, []);
   const [formData, setFormData] = useState({
     patientName: '',
     requesterName: '',
@@ -124,11 +135,17 @@ export function RequestForm({ selectedBank, onClose, onNavigate, user }: Request
       formDataToSend.append('hospitalName', formData.hospital);
       formDataToSend.append('requiredDate', formData.requiredDate);
       formDataToSend.append('reason', formData.reason);
+      formDataToSend.append('emergency', String(formData.urgency === 'emergency'));
       formDataToSend.append('requesterName', formData.requesterName);
       formDataToSend.append('requesterEmail', formData.email);
       // Normalize phone to +91XXXXXXXXXX for storage
       const normalizedPhone = normalizeIndianMobile(formData.phone) || formData.phone;
       formDataToSend.append('requesterPhone', normalizedPhone);
+      // Append GPS coordinates if available for the live emergency feed
+      if (userLocation) {
+        formDataToSend.append('latitude', String(userLocation.lat));
+        formDataToSend.append('longitude', String(userLocation.lng));
+      }
       formDataToSend.append('prescriptionFile', prescriptionFile);
       if (idProofFile) {
         formDataToSend.append('idProofFile', idProofFile);

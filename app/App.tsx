@@ -14,9 +14,10 @@ import { Notifications } from './components/Notifications';
 import { LoginModal } from './components/LoginModal';
 import { SignupModal } from './components/SignupModal';
 import { Footer } from './components/Footer';
+import { EmergencyDashboard } from './components/EmergencyDashboard';
 import { authAPI } from './services/authAPI';
 
-type Page = 'home' | 'find-blood' | 'become-donor' | 'hospitals' | 'hospitals-list' | 'education' | 'donor-dashboard' | 'requestor-dashboard' | 'hospital-panel' | 'hospital-profile' | 'profile' | 'notifications';
+type Page = 'home' | 'find-blood' | 'become-donor' | 'hospitals' | 'hospitals-list' | 'education' | 'donor-dashboard' | 'requestor-dashboard' | 'hospital-panel' | 'hospital-profile' | 'profile' | 'notifications' | 'emergency-feed';
 
 type UserRole = 'donor' | 'requestor' | 'hospital' | null;
 
@@ -129,6 +130,7 @@ export default function App() {
         {currentPage === 'hospital-profile' && <HospitalProfile onLogout={handleLogout} onNavigate={setCurrentPage} />}
         {currentPage === 'profile' && <Profile user={user} />}
         {currentPage === 'notifications' && <Notifications />}
+        {currentPage === 'emergency-feed' && <EmergencyDashboard user={user} onLogin={() => setShowLoginModal(true)} />}
       </main>
       
       <Footer />

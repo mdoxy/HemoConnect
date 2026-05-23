@@ -16,6 +16,19 @@ const requestSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    // GeoJSON Point — [longitude, latitude]
+    // Required for $near geospatial queries in the live emergency feed.
+    location: {
+      type: {
+        type: String,
+        enum: ['Point'],
+        default: 'Point',
+      },
+      coordinates: {
+        type: [Number], // [longitude, latitude]
+        default: null,
+      },
+    },
     patientName: {
       type: String,
       required: true,
@@ -92,11 +105,37 @@ const requestSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    // ── Priority System Fields ─────────────────────────────────────────────────
+    priorityScore: {
+      type: Number,
+      default: 0,
+    },
+    // Derived label from score: critical | high | medium | low
+    // Updated whenever priorityScore changes (creation + escalation).
+    priorityLevel: {
+      type: String,
+      enum: ['critical', 'high', 'medium', 'low'],
+      default: 'low',
+    },
+    emergency: {
+      type: Boolean,
+      default: false,
+    },
+    hoursLeft: {
+      type: Number,
+      default: null,
+    },
   },
   {
     timestamps: true,
     collection: 'requests',
   }
 );
+
+// ── Indexes ────────────────────────────────────────────────────────────────
+// 2dsphere index enables $near geospatial queries for the live emergency feed
+requestSchema.index({ location: '2dsphere' });
+// Compound index: fast lookup by status + priority for the emergency dashboard
+requestSchema.index({ status: 1, priorityScore: -1 });
 
 export default mongoose.model('Request', requestSchema);
