@@ -77,44 +77,16 @@ It simplifies blood requests, donor management, and appointment scheduling in a 
 
 ## ⚙️ Setup Instructions
 
-### 1️⃣ Clone Repository
+> [!IMPORTANT]
+> HemoConnect is a multi-service application consisting of a React frontend, Node.js backend, and Python FastAPI priority engine.
+> For full, step-by-step setup, configuration, running, and testing instructions, please refer to the comprehensive [Developer Setup & Testing Guide](DEVELOPER_SETUP.md).
 
-```bash
-git clone https://github.com/mdoxy/HemoConnect.git
-cd HemoConnect
-```
+For quick reference, the core setup workflow is:
+1. **Frontend (Root)**: `npm install` followed by `npm run dev` (starts on port 5175 or 5173).
+2. **Node.js Backend**: `cd backend && npm install` followed by `npm run dev` (starts on port 5000).
+3. **Python Priority Engine**: `cd python_priority_engine`, configure venv, `pip install -r requirements.txt`, seed default rules with `python scripts/seed_scoring_rules.py`, and run `uvicorn main:app --reload --port 8000`.
 
-### 2️⃣ Install Dependencies
-
-```bash
-npm install
-cd backend
-npm install
-```
-
-### 3️⃣ Setup Environment
-
-Create `.env` file in backend:
-
-```
-MONGODB_URI=your_mongodb_url
-JWT_SECRET=your_secret_key
-```
-
-### 4️⃣ Run Project
-
-Frontend:
-
-```bash
-npm run dev
-```
-
-Backend:
-
-```bash
-cd backend
-node server.js
-```
+---
 # 🗄️ MongoDB Atlas Setup Guide
 
 This guide helps you set up **MongoDB Atlas (Cloud Database)** for the HemoConnect project.

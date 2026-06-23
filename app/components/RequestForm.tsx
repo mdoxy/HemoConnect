@@ -12,6 +12,8 @@ interface User {
   verified: boolean;
   bloodType?: string;
   email?: string;
+  phone?: string;
+  contactNumber?: string;
 }
 
 interface RequestFormProps {
@@ -24,19 +26,21 @@ interface RequestFormProps {
 export function RequestForm({ selectedBank, onClose, onNavigate, user }: RequestFormProps) {
   const [submitted, setSubmitted] = useState(false);
   const [submittedRequestId, setSubmittedRequestId] = useState('');
+  const [priorityScore, setPriorityScore] = useState<number | null>(null);
+  const [priorityEngineId, setPriorityEngineId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [prescriptionFile, setPrescriptionFile] = useState<File | null>(null);
   const [idProofFile, setIdProofFile] = useState<File | null>(null);
-  const [formErrors, setFormErrors] = useState<{ prescription?: string }>({});
+  const [formErrors, setFormErrors] = useState<{ prescription?: string }>({}); 
   const [formData, setFormData] = useState({
     patientName: '',
-    requesterName: '',
+    requesterName: user?.name || '',
     relationship: '',
-    email: '',
-    phone: '',
+    email: user?.email || '',
+    phone: user?.phone || user?.contactNumber || '',
     bloodType: '',
     unitsNeeded: '',
-    urgency: '',
+    urgency: 'critical',
     hospital: selectedBank?.name || '',
     hospitalAddress: selectedBank?.address || '',
     city: '',
@@ -69,9 +73,13 @@ export function RequestForm({ selectedBank, onClose, onNavigate, user }: Request
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validation for prescription file
+    // Validation for prescription and ID proof files
     if (!prescriptionFile) {
       setFormErrors({ prescription: 'Prescription upload is required' });
+      return;
+    }
+    if (!idProofFile) {
+      setFormErrors({ prescription: 'ID Proof upload is required' });
       return;
     }
 
@@ -159,6 +167,41 @@ export function RequestForm({ selectedBank, onClose, onNavigate, user }: Request
         localStorage.setItem('requesterEmails', JSON.stringify(previousEmails));
       }
 
+      // ── Step 2: Submit to Python Priority Engine (non-blocking) ──────────────
+      // Every request is priority-scored. Uses hospital lat/lng from CSV for geospatial scoring.
+      // If the engine is offline, we still show success — the Node.js request is already saved.
+      try {
+        const urgencyMap: Record<string, string> = {
+          critical: 'critical',
+          high: 'high',
+          medium: 'medium',
+          low: 'low',
+        };
+        const pyPayload = {
+          patient_name: formData.patientName,
+          blood_group: formData.bloodType,
+          units_required: parseInt(formData.unitsNeeded),
+          urgency_level: urgencyMap[formData.urgency] || 'medium',
+          hospital_id: selectedBank?.id ?? 'H001',
+          longitude: selectedBank?.longitude ?? 73.8567,
+          latitude: selectedBank?.latitude ?? 18.5204,
+          notes: formData.reason || '',
+        };
+        const pyRes = await fetch('http://localhost:8000/api/emergency/request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(pyPayload),
+        });
+        if (pyRes.ok) {
+          const pyData = await pyRes.json();
+          setPriorityScore(pyData.priority_score ?? null);
+          setPriorityEngineId(pyData.request_id ?? null);
+        }
+      } catch {
+        // Python engine offline — non-blocking, request already saved to Node.js
+        setPriorityScore(null);
+      }
+
       // Set submitted to show confirmation UI
       setSubmittedRequestId(responseData.requestId || '');
       setSubmitted(true);
@@ -183,45 +226,95 @@ export function RequestForm({ selectedBank, onClose, onNavigate, user }: Request
   };
 
   if (submitted) {
+    const urgencyColors: Record<string, string> = {
+      critical: 'bg-red-100 text-red-700 border-red-300',
+      high:     'bg-orange-100 text-orange-700 border-orange-300',
+      medium:   'bg-amber-100 text-amber-700 border-amber-300',
+      low:      'bg-blue-100 text-blue-700 border-blue-300',
+    };
+    const scoreColor = priorityScore !== null
+      ? (priorityScore >= 75 ? 'text-red-600' : priorityScore >= 50 ? 'text-orange-600' : priorityScore >= 25 ? 'text-amber-600' : 'text-blue-600')
+      : 'text-gray-400';
+    const scoreBarColor = priorityScore !== null
+      ? (priorityScore >= 75 ? 'bg-red-500' : priorityScore >= 50 ? 'bg-orange-400' : 'bg-amber-400')
+      : 'bg-gray-200';
+
     return (
       <div className="bg-gray-50 min-h-screen py-12 flex items-center justify-center">
-        <div className="max-w-md mx-auto px-4">
-          <div className="bg-white p-8 rounded-lg shadow-md text-center">
-            <div className="flex justify-center mb-4">
-              <CheckCircle className="w-16 h-16 text-green-600" />
+        <div className="max-w-lg mx-auto px-4">
+          <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+            {/* Success header */}
+            <div className="bg-gradient-to-r from-emerald-500 to-green-600 px-8 py-6 text-center">
+              <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
+                <CheckCircle className="w-10 h-10 text-white" />
+              </div>
+              <h2 className="text-2xl font-bold text-white">Request Submitted!</h2>
+              <p className="text-emerald-100 text-sm mt-1">Your blood request is now in the system</p>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Request Submitted!</h2>
-            <p className="text-gray-600 mb-6">
-              Your blood request has been received. Our team will process your request and contact you within 2 hours.
-            </p>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-              <p className="text-sm text-blue-800">
-                <strong>Request ID:</strong> {submittedRequestId || 'Generated'}
-              </p>
-              <p className="text-sm text-blue-800 mt-1">
-                Please keep this ID for reference
-              </p>
-            </div>
-            <p className="text-sm text-gray-500 mb-4">Choose your next step.</p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  if (onNavigate) {
-                    onNavigate('requestor-dashboard');
-                  } else {
-                    setSubmitted(false);
-                  }
-                }}
-                className="flex-1 bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition-colors font-semibold"
-              >
-                Go to Dashboard
-              </button>
-              <button
-                onClick={() => setSubmitted(false)}
-                className="flex-1 bg-gray-200 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-300 transition-colors font-semibold"
-              >
-                New Request
-              </button>
+
+            <div className="p-6 space-y-4">
+              {/* Request ID */}
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                <p className="text-xs text-gray-500 font-medium mb-1">Request ID</p>
+                <p className="text-sm font-mono text-gray-800 font-semibold">{submittedRequestId || 'Generated'}</p>
+              </div>
+
+              {/* Priority Score card */}
+              <div className={`rounded-xl p-4 border ${
+                priorityScore !== null ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'
+              }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Priority Score</p>
+                  <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full border ${urgencyColors[formData.urgency] || urgencyColors.medium}`}>
+                    {formData.urgency.toUpperCase()}
+                  </span>
+                </div>
+                {priorityScore !== null ? (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${scoreBarColor}`}
+                          style={{ width: `${priorityScore}%` }}
+                        />
+                      </div>
+                      <span className={`text-2xl font-black tabular-nums ${scoreColor}`}>{priorityScore.toFixed(1)}</span>
+                      <span className="text-sm text-gray-400 font-medium">/100</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">Computed by the live Priority Engine · Auto-updates every 15s</p>
+                    {priorityEngineId && (
+                      <p className="text-xs font-mono text-gray-400 mt-1">Queue ID: {priorityEngineId.slice(0, 16)}…</p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-gray-500">Priority engine offline — request saved. Score will be computed when engine restarts.</p>
+                )}
+              </div>
+
+              {/* What happens next */}
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <p className="text-xs font-bold text-blue-800 mb-2">What happens next?</p>
+                <ol className="text-xs text-blue-700 space-y-1.5 list-decimal list-inside">
+                  <li>Hospital reviews your request and documents</li>
+                  <li>Approval triggers priority re-scoring</li>
+                  <li>Blood is prepared and you'll be notified</li>
+                </ol>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => { if (onNavigate) onNavigate('requestor-dashboard'); else setSubmitted(false); }}
+                  className="flex-1 bg-red-600 text-white px-6 py-2.5 rounded-xl hover:bg-red-700 transition-colors font-semibold text-sm"
+                >
+                  Go to Dashboard
+                </button>
+                <button
+                  onClick={() => { setSubmitted(false); setPriorityScore(null); setPriorityEngineId(null); }}
+                  className="flex-1 bg-gray-100 text-gray-800 px-6 py-2.5 rounded-xl hover:bg-gray-200 transition-colors font-semibold text-sm"
+                >
+                  New Request
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -502,10 +595,10 @@ export function RequestForm({ selectedBank, onClose, onNavigate, user }: Request
                     required
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
                   >
-                    <option value="">Select Urgency</option>
-                    <option value="emergency">Emergency (Within 24 hours)</option>
-                    <option value="urgent">Urgent (1-3 days)</option>
-                    <option value="scheduled">Scheduled (3+ days)</option>
+                    <option value="critical">🔴 Critical — Immediate (surgery/ICU)</option>
+                    <option value="high">🟠 High Priority — Within 6–24 hours</option>
+                    <option value="medium">🟡 Medium — Within 24–72 hours</option>
+                    <option value="low">🔵 Scheduled — Elective / Routine</option>
                   </select>
                 </div>
                 
@@ -594,7 +687,7 @@ export function RequestForm({ selectedBank, onClose, onNavigate, user }: Request
                     {/* ID Proof Upload */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Upload ID Proof (PDF/Image) – Optional but Recommended
+                        Upload ID Proof (PDF/Image) *
                       </label>
                       <div className="relative">
                         <input

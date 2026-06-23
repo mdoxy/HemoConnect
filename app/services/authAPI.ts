@@ -3,7 +3,7 @@ import { apiUrl } from './api';
 export const authAPI = {
   // Signup
   signup: async (userData: {
-    name: string;
+    name?: string;
     email: string;
     password: string;
     role: 'donor' | 'requestor' | 'hospital';
@@ -12,6 +12,7 @@ export const authAPI = {
     location?: string;
     hospitalName?: string;
     contactNumber?: string;
+    firebaseIdToken?: string;
   }) => {
     try {
       const response = await fetch(apiUrl('/auth/signup'), {
@@ -45,6 +46,43 @@ export const authAPI = {
         throw error;
       }
       throw new Error('Failed to connect to server. Please check your connection.');
+    }
+  },
+
+  // Verify Email
+  verifyEmail: async (email: string, otp: string) => {
+    try {
+      const response = await fetch(apiUrl('/auth/verify-email'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, otp }),
+      });
+
+      if (!response.ok) {
+        let errorMessage = 'Verification failed';
+        try {
+          const data = await response.json();
+          errorMessage = data.message || errorMessage;
+        } catch {
+          errorMessage = `Server error: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+      }
+      return data;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Failed to verify email. Please check your connection.');
     }
   },
 

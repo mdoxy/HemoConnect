@@ -6,6 +6,8 @@ import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import { body, validationResult } from 'express-validator';
 import { isValidIndianMobile, normalizeIndianMobile } from '../utils/phone.js';
+import { sendVerificationEmail } from '../services/notificationService.js';
+import { getAuth } from 'firebase-admin/auth';
 
 const router = express.Router();
 const memoryUsers = [];
@@ -85,82 +87,57 @@ router.post(
   async (req, res) => {
     try {
       console.log('POST /api/auth/signup hit');
-      console.log('Request body:', JSON.stringify(req.body, null, 2));
-      
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        console.log('Signup validation failed:', errors.array());
         return res.status(400).json({ errors: errors.array() });
       }
 
       const {
-        name,
-        email,
-        password,
-        role,
-        bloodType,
-        phone,
-        location,
-        hospitalName,
-        contactNumber,
+        name, email, password, role, bloodType, phone, location, hospitalName, contactNumber, firebaseIdToken
       } = req.body;
       const normalizedEmail = email.trim().toLowerCase();
 
       if (role === 'hospital') {
-        if (!hospitalName?.trim()) {
-          return res.status(400).json({ message: 'Hospital name is required' });
-        }
-
-        if (!location?.trim()) {
-          return res.status(400).json({ message: 'Location is required' });
-        }
-
-        if (!contactNumber?.trim()) {
-          return res.status(400).json({ message: 'Contact number is required' });
-        }
-
-        if (!isValidIndianMobile(contactNumber)) {
-          return res.status(400).json({ message: 'Please enter a valid Indian mobile number.' });
-        }
+        if (!hospitalName?.trim()) return res.status(400).json({ message: 'Hospital name is required' });
+        if (!location?.trim()) return res.status(400).json({ message: 'Location is required' });
+        if (!contactNumber?.trim()) return res.status(400).json({ message: 'Contact number is required' });
+        if (!isValidIndianMobile(contactNumber)) return res.status(400).json({ message: 'Please enter a valid Indian mobile number.' });
       } else {
-        if (!name?.trim()) {
-          return res.status(400).json({ message: 'Name is required' });
-        }
+        if (!name?.trim()) return res.status(400).json({ message: 'Name is required' });
+        if (!phone?.trim()) return res.status(400).json({ message: 'Phone number is required' });
+        if (!isValidIndianMobile(phone)) return res.status(400).json({ message: 'Please enter a valid Indian mobile number.' });
+      }
 
-        if (!phone?.trim()) {
-          return res.status(400).json({ message: 'Phone number is required' });
-        }
-
-        if (!isValidIndianMobile(phone)) {
-          return res.status(400).json({ message: 'Please enter a valid Indian mobile number.' });
+      let phoneVerified = false;
+      if (firebaseIdToken) {
+        try {
+          const decodedToken = await getAuth().verifyIdToken(firebaseIdToken);
+          phoneVerified = true;
+          console.log(`Phone verified via Firebase for ${normalizedEmail}`);
+        } catch (err) {
+          console.error('Firebase token verification failed:', err);
+          return res.status(400).json({ message: 'Invalid phone verification token' });
         }
       }
 
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+
       if (!isDatabaseReady()) {
         const existingMemoryAccount = getMemoryAccountByEmail(normalizedEmail);
-        if (existingMemoryAccount) {
-          return res.status(400).json({ message: 'User already exists' });
-        }
+        if (existingMemoryAccount) return res.status(400).json({ message: 'User already exists' });
 
         const account = await createMemoryAccount({
-          name,
-          hospitalName,
-          email: normalizedEmail,
-          password,
-          role,
-          bloodType,
-          phone,
-          location,
-          contactNumber,
+          name, hospitalName, email: normalizedEmail, password, role, bloodType, phone, location, contactNumber,
         });
+        
+        account.emailOTP = otp;
+        account.emailOTPExpires = otpExpires;
+        account.emailVerified = false;
+        account.phoneVerified = phoneVerified;
 
-        const token = jwt.sign({ userId: account._id, role: account.role }, JWT_SECRET, { expiresIn: '7d' });
-
-        return res.status(201).json({
-          message: 'User registered successfully',
-          token,
-          user: toAuthResponse(account),
-        });
+        await sendVerificationEmail(normalizedEmail, otp);
+        return res.status(201).json({ message: 'Verification OTP sent to email', requireOTP: true });
       }
 
       const [existingUser, existingHospital] = await Promise.all([
@@ -169,11 +146,9 @@ router.post(
       ]);
 
       if (existingUser || existingHospital) {
-        console.log(`Signup blocked: user already exists for ${normalizedEmail}`);
         return res.status(400).json({ message: 'User already exists' });
       }
 
-      // Hash password
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
 
@@ -185,21 +160,17 @@ router.post(
           location: location.trim(),
           contactNumber: normalizeIndianMobile(contactNumber) || contactNumber,
           role: 'hospital',
+          emailOTP: otp,
+          emailOTPExpires: otpExpires,
+          emailVerified: false,
+          phoneVerified: phoneVerified,
         });
-
         await hospital.save();
-
-        const token = jwt.sign({ userId: hospital._id, role: hospital.role }, JWT_SECRET, { expiresIn: '7d' });
-
-        return res.status(201).json({
-          message: 'Hospital registered successfully',
-          token,
-          user: buildAuthResponse(hospital),
-        });
+        await sendVerificationEmail(normalizedEmail, otp);
+        return res.status(201).json({ message: 'Verification OTP sent to email', requireOTP: true });
       }
 
       const normalizedPhone = normalizeIndianMobile(phone) || phone;
-
       const user = new User({
         name,
         email: normalizedEmail,
@@ -208,39 +179,75 @@ router.post(
         bloodType,
         phone: normalizedPhone,
         location,
+        emailOTP: otp,
+        emailOTPExpires: otpExpires,
+        emailVerified: false,
+        phoneVerified: phoneVerified,
       });
 
       await user.save();
-      console.log(`Signup saved user: ${user._id}`);
-
-      const token = jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-
-      return res.status(201).json({
-        message: 'User registered successfully',
-        token,
-        user: buildAuthResponse(user),
-      });
+      await sendVerificationEmail(normalizedEmail, otp);
+      return res.status(201).json({ message: 'Verification OTP sent to email', requireOTP: true });
     } catch (error) {
       console.error('❌ Signup error:', error);
-      console.error('Error name:', error.name);
-      console.error('Error message:', error.message);
-      console.error('Error stack:', error.stack);
-      
-      // Handle specific MongoDB errors
       if (error.code === 11000) {
         const field = Object.keys(error.keyPattern)[0];
         return res.status(400).json({ message: `${field} already exists` });
       }
-      
       if (error.name === 'ValidationError') {
         const messages = Object.values(error.errors).map(err => err.message);
         return res.status(400).json({ message: 'Validation error', errors: messages });
       }
-      
       res.status(500).json({ message: 'Server error', error: error.message });
     }
   }
 );
+
+// Verify Email OTP
+router.post('/verify-email', async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) return res.status(400).json({ message: 'Email and OTP are required' });
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!isDatabaseReady()) {
+      const account = getMemoryAccountByEmail(normalizedEmail);
+      if (!account || account.emailOTP !== otp) {
+        return res.status(400).json({ message: 'Invalid or expired OTP' });
+      }
+      if (new Date() > account.emailOTPExpires) {
+        return res.status(400).json({ message: 'OTP has expired' });
+      }
+      account.emailVerified = true;
+      account.emailOTP = null;
+      account.emailOTPExpires = null;
+      const token = jwt.sign({ userId: account._id, role: account.role }, JWT_SECRET, { expiresIn: '7d' });
+      return res.json({ message: 'Email verified successfully', token, user: toAuthResponse(account) });
+    }
+
+    const [hospital, user] = await Promise.all([
+      Hospital.findOne({ email: normalizedEmail }),
+      User.findOne({ email: normalizedEmail }),
+    ]);
+
+    const account = hospital || user;
+    if (!account) return res.status(404).json({ message: 'User not found' });
+
+    if (account.emailOTP !== otp) return res.status(400).json({ message: 'Invalid OTP' });
+    if (new Date() > account.emailOTPExpires) return res.status(400).json({ message: 'OTP has expired' });
+
+    account.emailVerified = true;
+    account.emailOTP = undefined;
+    account.emailOTPExpires = undefined;
+    await account.save();
+
+    const token = jwt.sign({ userId: account._id, role: account.role }, JWT_SECRET, { expiresIn: '7d' });
+    return res.json({ message: 'Email verified successfully', token, user: buildAuthResponse(account) });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
 
 // Login Route
 router.post(
@@ -501,6 +508,51 @@ router.delete('/hospital/:id', async (req, res) => {
 
     res.json({ message: 'Hospital account deleted successfully' });
   } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Register or remove FCM token for push notifications
+router.post('/fcm-token', async (req, res) => {
+  try {
+    const { userId, token, deviceType = 'web', action = 'register' } = req.body;
+
+    if (!userId || !token) {
+      return res.status(400).json({ message: 'userId and token are required' });
+    }
+
+    if (!isDatabaseReady()) {
+      // In-memory mode: silently accept but can't persist tokens
+      console.log(`FCM token ${action} received for user ${userId} (memory mode — not persisted)`);
+      return res.json({ message: `FCM token ${action}ed (memory mode)`, persisted: false });
+    }
+
+    if (action === 'remove') {
+      await User.findByIdAndUpdate(userId, {
+        $pull: { fcmTokens: { token } },
+      });
+      console.log(`FCM token removed for user ${userId}`);
+      return res.json({ message: 'FCM token removed' });
+    }
+
+    // Register: avoid duplicate tokens
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const existingToken = user.fcmTokens?.find((t) => t.token === token);
+    if (!existingToken) {
+      user.fcmTokens.push({ token, deviceType, createdAt: new Date() });
+      await user.save();
+      console.log(`FCM token registered for user ${userId}`);
+    } else {
+      console.log(`FCM token already registered for user ${userId}`);
+    }
+
+    res.json({ message: 'FCM token registered' });
+  } catch (error) {
+    console.error('FCM token error:', error.message);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });

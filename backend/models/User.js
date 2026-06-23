@@ -31,6 +31,20 @@ const userSchema = new mongoose.Schema({
     type: String,
     enum: ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'],
   },
+  emailVerified: {
+    type: Boolean,
+    default: false,
+  },
+  phoneVerified: {
+    type: Boolean,
+    default: false,
+  },
+  emailOTP: {
+    type: String,
+  },
+  emailOTPExpires: {
+    type: Date,
+  },
   verified: {
     type: Boolean,
     default: false,
@@ -51,6 +65,11 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  fcmTokens: [{
+    token: { type: String, required: true },
+    deviceType: { type: String, enum: ['web', 'android', 'ios'], default: 'web' },
+    createdAt: { type: Date, default: Date.now },
+  }],
 });
 
 export default mongoose.model('User', userSchema);

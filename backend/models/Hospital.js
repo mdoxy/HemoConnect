@@ -39,6 +39,20 @@ const hospitalSchema = new mongoose.Schema(
       default: 'hospital',
       enum: ['hospital'],
     },
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    phoneVerified: {
+      type: Boolean,
+      default: false,
+    },
+    emailOTP: {
+      type: String,
+    },
+    emailOTPExpires: {
+      type: Date,
+    },
     verified: {
       type: Boolean,
       default: true,

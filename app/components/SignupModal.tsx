@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Mail, Lock, User, Phone, Droplet, Building2, Eye, EyeOff } from 'lucide-react';
 import { isValidIndianMobile, normalizeIndianMobile, getPhoneValidationErrorMessage } from '../utils/validation';
 import { authAPI } from '../services/authAPI';
+import { auth } from '../services/firebase';
+import { RecaptchaVerifier, signInWithPhoneNumber } from 'firebase/auth';
 
 interface SignupModalProps {
   onClose: () => void;
@@ -12,11 +14,20 @@ interface SignupModalProps {
 type UserRole = 'donor' | 'requestor' | 'hospital';
 
 export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalProps) {
-  const [step, setStep] = useState<'role' | 'details' | 'verification'>('role');
+  const [step, setStep] = useState<'role' | 'details' | 'phone_verification' | 'email_verification'>('role');
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  
+  // Phone auth state
+  const [confirmationResult, setConfirmationResult] = useState<any>(null);
+  const [smsCode, setSmsCode] = useState('');
+  const [firebaseIdToken, setFirebaseIdToken] = useState('');
+  
+  // Email auth state
+  const [emailOtp, setEmailOtp] = useState('');
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -29,16 +40,32 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
     licenseNumber: '',
   });
 
+  useEffect(() => {
+    // Cleanup recaptcha on unmount
+    return () => {
+      if ((window as any).recaptchaVerifier) {
+        (window as any).recaptchaVerifier.clear();
+      }
+    };
+  }, []);
+
+  const setupRecaptcha = () => {
+    if (!(window as any).recaptchaVerifier) {
+      (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+        size: 'invisible',
+      });
+    }
+  };
+
   const handleRoleSelect = (role: UserRole) => {
     setSelectedRole(role);
     setStep('details');
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleDetailsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    // Validation
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
       return;
@@ -49,43 +76,72 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
       return;
     }
 
+    if (!formData.phone) {
+      setError('Phone number is required');
+      return;
+    }
+
+    if (!isValidIndianMobile(formData.phone)) {
+      setError(getPhoneValidationErrorMessage());
+      return;
+    }
+
     setLoading(true);
 
+    try {
+      setupRecaptcha();
+      const normalizedPhone = normalizeIndianMobile(formData.phone) || formData.phone;
+      const appVerifier = (window as any).recaptchaVerifier;
+      
+      const confirmation = await signInWithPhoneNumber(auth, normalizedPhone, appVerifier);
+      setConfirmationResult(confirmation);
+      setStep('phone_verification');
+    } catch (err: any) {
+      console.error('SMS send error:', err);
+      setError(err.message || 'Failed to send SMS code. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePhoneVerificationSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    
+    if (!smsCode) {
+      setError('Please enter the SMS code');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await confirmationResult.confirm(smsCode);
+      const user = result.user;
+      const idToken = await user.getIdToken();
+      setFirebaseIdToken(idToken);
+      
+      // Now that phone is verified, hit our backend signup
+      await proceedToBackendSignup(idToken);
+    } catch (err: any) {
+      console.error('Phone verification error:', err);
+      setError('Invalid SMS code. Please try again.');
+      setLoading(false);
+    }
+  };
+
+  const proceedToBackendSignup = async (idToken: string) => {
     try {
       const signupData: any = {
         name: formData.name,
         email: formData.email,
         password: formData.password,
         role: selectedRole,
+        firebaseIdToken: idToken,
       };
-
-      if (!formData.phone) {
-        setError('Phone number is required');
-        setLoading(false);
-        return;
-      }
-
-      if (!isValidIndianMobile(formData.phone)) {
-        setError(getPhoneValidationErrorMessage());
-        setLoading(false);
-        return;
-      }
 
       const normalized = normalizeIndianMobile(formData.phone) || formData.phone;
 
       if (selectedRole === 'hospital') {
-        if (!formData.name.trim()) {
-          setError('Hospital name is required');
-          setLoading(false);
-          return;
-        }
-
-        if (!formData.location.trim()) {
-          setError('Location is required');
-          setLoading(false);
-          return;
-        }
-
         signupData.hospitalName = formData.name.trim();
         signupData.contactNumber = normalized;
         signupData.location = formData.location.trim();
@@ -97,11 +153,37 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
       if (formData.organizationName) signupData.organizationName = formData.organizationName;
 
       const response = await authAPI.signup(signupData);
+      
+      if (response.requireOTP) {
+        setStep('email_verification');
+      } else {
+        // Fallback if backend doesn't require OTP for some reason
+        onSignup(response.user);
+      }
+    } catch (err: any) {
+      console.error('Signup error:', err);
+      setError(err.message || 'Signup failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEmailVerificationSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    
+    if (!emailOtp) {
+      setError('Please enter the email OTP');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await authAPI.verifyEmail(formData.email, emailOtp);
       onSignup(response.user);
     } catch (err: any) {
-      const errorMessage = err.message || 'Signup failed';
-      setError(errorMessage);
-      console.error('Signup error:', err);
+      console.error('Email verification error:', err);
+      setError(err.message || 'Invalid Email OTP. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -110,7 +192,6 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl relative animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
-        {/* Close Button */}
         <button
           onClick={onClose}
           className="sticky top-4 float-right mr-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors z-10"
@@ -118,25 +199,22 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
           <X className="w-5 h-5" />
         </button>
 
-        {/* Header */}
         <div className="p-8 pb-6">
           <h2 className="text-3xl font-bold text-gray-900 mb-2">Join HemoConnect</h2>
           <p className="text-gray-600">Create your account and start saving lives</p>
           
-          {/* Progress Steps */}
           <div className="flex items-center gap-2 mt-6">
             <div className={`flex-1 h-1.5 rounded-full ${step === 'role' ? 'bg-red-600' : 'bg-red-200'}`}></div>
-            <div className={`flex-1 h-1.5 rounded-full ${step === 'details' ? 'bg-red-600' : step === 'verification' ? 'bg-red-200' : 'bg-gray-200'}`}></div>
-            <div className={`flex-1 h-1.5 rounded-full ${step === 'verification' ? 'bg-red-600' : 'bg-gray-200'}`}></div>
+            <div className={`flex-1 h-1.5 rounded-full ${step === 'details' ? 'bg-red-600' : (step === 'phone_verification' || step === 'email_verification') ? 'bg-red-200' : 'bg-gray-200'}`}></div>
+            <div className={`flex-1 h-1.5 rounded-full ${step === 'phone_verification' ? 'bg-red-600' : step === 'email_verification' ? 'bg-red-200' : 'bg-gray-200'}`}></div>
+            <div className={`flex-1 h-1.5 rounded-full ${step === 'email_verification' ? 'bg-red-600' : 'bg-gray-200'}`}></div>
           </div>
         </div>
 
-        {/* Step 1: Role Selection */}
         {step === 'role' && (
           <div className="px-8 pb-8">
             <h3 className="font-semibold text-gray-900 mb-4">Select Your Role</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Donor */}
               <button
                 onClick={() => handleRoleSelect('donor')}
                 className="p-6 border-2 border-gray-200 rounded-xl hover:border-red-600 hover:bg-red-50 transition-all group text-left"
@@ -150,7 +228,6 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
                 </p>
               </button>
 
-              {/* Requestor */}
               <button
                 onClick={() => handleRoleSelect('requestor')}
                 className="p-6 border-2 border-gray-200 rounded-xl hover:border-blue-600 hover:bg-blue-50 transition-all group text-left"
@@ -164,7 +241,6 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
                 </p>
               </button>
 
-              {/* Hospital */}
               <button
                 onClick={() => handleRoleSelect('hospital')}
                 className="p-6 border-2 border-gray-200 rounded-xl hover:border-purple-600 hover:bg-purple-50 transition-all group text-left"
@@ -191,10 +267,8 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
           </div>
         )}
 
-        {/* Step 2: Details Form */}
         {step === 'details' && (
-          <form onSubmit={handleSubmit} className="px-8 pb-8 space-y-4">
-            {/* Back Button */}
+          <form onSubmit={handleDetailsSubmit} className="px-8 pb-8 space-y-4">
             <button
               type="button"
               onClick={() => setStep('role')}
@@ -209,7 +283,6 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
               </p>
             </div>
 
-            {/* Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 {selectedRole === 'hospital' ? 'Organization Name' : 'Full Name'} *
@@ -232,7 +305,6 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Email */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Email Address *
@@ -250,10 +322,9 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
                 </div>
               </div>
 
-              {/* Phone */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {selectedRole === 'hospital' ? 'Contact Number *' : 'Phone Number *'} <span className="text-xs text-gray-500">(Indian Mobile)</span>
+                  {selectedRole === 'hospital' ? 'Contact Number *' : 'Phone Number *'}
                 </label>
                 <div className="relative">
                   <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -266,7 +337,6 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
                     placeholder="+91XXXXXXXXXX"
                   />
                 </div>
-                <p className="text-xs text-gray-500 mt-1">Accepted: +91XXXXXXXX (10 digits starting with 6-9)</p>
               </div>
             </div>
 
@@ -286,7 +356,6 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
               </div>
             )}
 
-            {/* Blood Type (Donor only) */}
             {selectedRole === 'donor' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -314,7 +383,6 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
               </div>
             )}
 
-            {/* License Number (Hospital only) */}
             {selectedRole === 'hospital' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -331,7 +399,6 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
               </div>
             )}
 
-            {/* Password */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Password *
@@ -356,7 +423,6 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
               </div>
             </div>
 
-            {/* Confirm Password */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Confirm Password *
@@ -374,7 +440,6 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
               </div>
             </div>
 
-            {/* Terms */}
             <label className="flex items-start gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -382,31 +447,105 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
                 className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500 mt-1"
               />
               <span className="text-sm text-gray-600">
-                I agree to the{' '}
-                <a href="#" className="text-red-600 hover:text-red-700 font-medium">
-                  Terms of Service
-                </a>{' '}
-                and{' '}
-                <a href="#" className="text-red-600 hover:text-red-700 font-medium">
-                  Privacy Policy
-                </a>
+                I agree to the Terms of Service and Privacy Policy
               </span>
             </label>
 
-            {/* Error Message */}
             {error && (
               <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
                 <p className="text-sm text-red-700">{error}</p>
               </div>
             )}
 
-            {/* Submit Button */}
+            <div id="recaptcha-container"></div>
+
             <button
               type="submit"
               disabled={loading}
               className="w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 disabled:bg-gray-400 transition-colors shadow-sm hover:shadow-md"
             >
-              {loading ? 'Creating Account...' : 'Create Account'}
+              {loading ? 'Sending SMS...' : 'Continue to Phone Verification'}
+            </button>
+          </form>
+        )}
+
+        {step === 'phone_verification' && (
+          <form onSubmit={handlePhoneVerificationSubmit} className="px-8 pb-8 space-y-4">
+            <h3 className="font-semibold text-gray-900 mb-4">Verify Your Phone Number</h3>
+            <p className="text-gray-600 text-sm mb-4">
+              We've sent an SMS with a verification code to {formData.phone}. Please enter it below.
+            </p>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                SMS Verification Code *
+              </label>
+              <input
+                type="text"
+                value={smsCode}
+                onChange={(e) => setSmsCode(e.target.value)}
+                required
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 tracking-widest text-center text-xl"
+                placeholder="------"
+              />
+            </div>
+
+            {error && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 disabled:bg-gray-400 transition-colors"
+            >
+              {loading ? 'Verifying...' : 'Verify Phone'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setStep('details')}
+              className="w-full text-gray-500 text-sm hover:text-gray-700 mt-2"
+            >
+              Back to Details
+            </button>
+          </form>
+        )}
+
+        {step === 'email_verification' && (
+          <form onSubmit={handleEmailVerificationSubmit} className="px-8 pb-8 space-y-4">
+            <h3 className="font-semibold text-gray-900 mb-4">Verify Your Email Address</h3>
+            <p className="text-gray-600 text-sm mb-4">
+              We've sent an email with a 6-digit OTP to {formData.email}. Please enter it below to complete your registration.
+            </p>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email OTP *
+              </label>
+              <input
+                type="text"
+                value={emailOtp}
+                onChange={(e) => setEmailOtp(e.target.value)}
+                required
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 tracking-widest text-center text-xl"
+                placeholder="------"
+              />
+            </div>
+
+            {error && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 disabled:bg-gray-400 transition-colors"
+            >
+              {loading ? 'Verifying...' : 'Verify Email & Create Account'}
             </button>
           </form>
         )}

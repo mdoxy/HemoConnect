@@ -1,0 +1,9 @@
+node_modules
+dist
+.env
+backend/.env
+backend/firebase-service-account.json
+python_priority_engine/__pycache__/
+python_priority_engine/.venv/
+python_priority_engine/venv/
+.DS_Store

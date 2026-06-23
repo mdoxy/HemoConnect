@@ -2,12 +2,15 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import mongoose from 'mongoose';
 import Request from '../models/Request.js';
 import BloodRequest from '../models/BloodRequest.js';
 import Requestor from '../models/Requestor.js';
 import User from '../models/User.js';
+import { notifyRequestStatusChange } from '../services/notificationService.js';
 
 const router = express.Router();
+const memoryRequests = [];
 
 // Ensure uploads directory exists
 const uploadsDir = './uploads';
@@ -101,12 +104,24 @@ const handleCreateRequest = async (req, res) => {
       });
     }
 
-    const [requestor, userAsRequestor] = await Promise.all([
-      Requestor.findById(requestorId),
-      User.findById(requestorId),
-    ]);
+    let requestorAccount = null;
+    const isDbConnected = mongoose.connection.readyState === 1;
 
-    const requestorAccount = requestor || userAsRequestor;
+    if (isDbConnected) {
+      const [requestor, userAsRequestor] = await Promise.all([
+        Requestor.findById(requestorId),
+        User.findById(requestorId),
+      ]);
+      requestorAccount = requestor || userAsRequestor;
+    } else {
+      // In-memory mode fallback: mock the account since MongoDB is offline
+      requestorAccount = {
+        _id: requestorId,
+        name: requesterName || 'In-Memory Requestor',
+        email: requesterEmail,
+      };
+    }
+
     if (!requestorAccount) {
       return res.status(404).json({
         success: false,
@@ -114,8 +129,8 @@ const handleCreateRequest = async (req, res) => {
       });
     }
 
-    // Create new blood request
-    const newRequest = new Request({
+    const requestData = {
+      _id: new mongoose.Types.ObjectId(),
       requestorId,
       userId: requestorId,
       hospitalId: hospitalId || null,
@@ -132,31 +147,27 @@ const handleCreateRequest = async (req, res) => {
       idProofFilePath: req.files.idProofFile ? req.files.idProofFile[0].path : null,
       status: 'Pending',
       submittedAt: new Date(),
-    });
+    };
 
+    if (!isDbConnected) {
+      memoryRequests.push(requestData);
+      console.log('Blood request saved in memory (degraded mode):', requestData._id);
+      return res.status(201).json({
+        success: true,
+        message: 'Blood request submitted successfully (memory mode)',
+        requestId: requestData._id,
+        request: requestData,
+      });
+    }
+
+    // Create new blood request in DB
+    const newRequest = new Request(requestData);
     const savedRequest = await newRequest.save();
 
     // Keep legacy compatibility: also persist in BloodRequest collection.
-    const legacyRequest = new BloodRequest({
-      userId: requestorId,
-      hospitalId: hospitalId || null,
-      patientName,
-      bloodGroup,
-      unitsRequired: parseInt(unitsRequired),
-      hospitalName,
-      requiredDate,
-      reason,
-      requesterName,
-      requesterEmail,
-      requesterPhone: normalizedPhone,
-      prescriptionFilePath: req.files.prescriptionFile[0].path,
-      idProofFilePath: req.files.idProofFile ? req.files.idProofFile[0].path : null,
-      status: 'Pending',
-      submittedAt: new Date(),
-    });
-
+    const legacyRequest = new BloodRequest(requestData);
     const savedLegacyRequest = await legacyRequest.save();
-    console.log('Blood request saved successfully:', savedRequest._id, savedLegacyRequest._id);
+    console.log('Blood request saved successfully in database:', savedRequest._id, savedLegacyRequest._id);
 
     res.status(201).json({
       success: true,
@@ -193,6 +204,16 @@ router.get('/user/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
 
+    if (mongoose.connection.readyState !== 1) {
+      const userRequests = memoryRequests
+        .filter((r) => String(r.userId) === userId || String(r.requestorId) === userId)
+        .sort((a, b) => b.submittedAt - a.submittedAt);
+      return res.json({
+        success: true,
+        data: userRequests,
+      });
+    }
+
     const requests = await Request.find({
       $or: [
         { requestorId: userId },
@@ -217,6 +238,14 @@ router.get('/user/:userId', async (req, res) => {
 // GET - Fetch all blood requests (for hospital panel)
 router.get('/', async (req, res) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      const sortedRequests = [...memoryRequests].sort((a, b) => b.submittedAt - a.submittedAt);
+      return res.json({
+        success: true,
+        data: sortedRequests,
+      });
+    }
+
     const requests = await Request.find().sort({ submittedAt: -1 });
     res.json({
       success: true,
@@ -244,6 +273,41 @@ router.put('/:requestId', async (req, res) => {
         success: false,
         message: 'Invalid status',
       });
+    }
+
+    if (mongoose.connection.readyState !== 1) {
+      const requestIndex = memoryRequests.findIndex((r) => String(r._id) === requestId);
+      if (requestIndex === -1) {
+        return res.status(404).json({
+          success: false,
+          message: 'Blood request not found',
+        });
+      }
+
+      memoryRequests[requestIndex].status = status;
+      memoryRequests[requestIndex].updatedAt = new Date();
+      if (status === 'Rejected' && rejectionReason) {
+        memoryRequests[requestIndex].rejectionReason = rejectionReason;
+      }
+      if (hospitalRemarks) {
+        memoryRequests[requestIndex].hospitalRemarks = hospitalRemarks;
+      }
+
+      const updatedRequest = memoryRequests[requestIndex];
+
+      res.json({
+        success: true,
+        message: 'Blood request updated successfully (memory mode)',
+        request: updatedRequest,
+      });
+
+      // Fire-and-forget: dispatch push + email notifications for status changes
+      if (status === 'Approved' || status === 'Rejected') {
+        notifyRequestStatusChange(updatedRequest, status).catch((err) => {
+          console.error('Notification dispatch error (non-blocking):', err.message);
+        });
+      }
+      return;
     }
 
     const updateData = {
@@ -277,6 +341,13 @@ router.put('/:requestId', async (req, res) => {
       message: 'Blood request updated successfully',
       request: updatedRequest,
     });
+
+    // Fire-and-forget: dispatch push + email notifications for status changes
+    if (status === 'Approved' || status === 'Rejected') {
+      notifyRequestStatusChange(updatedRequest, status).catch((err) => {
+        console.error('Notification dispatch error (non-blocking):', err.message);
+      });
+    }
   } catch (error) {
     console.error('Error updating blood request:', error);
     res.status(500).json({
@@ -291,6 +362,21 @@ router.put('/:requestId', async (req, res) => {
 router.get('/:requestId', async (req, res) => {
   try {
     const { requestId } = req.params;
+
+    if (mongoose.connection.readyState !== 1) {
+      const request = memoryRequests.find((r) => String(r._id) === requestId);
+      if (!request) {
+        return res.status(404).json({
+          success: false,
+          message: 'Blood request not found',
+        });
+      }
+      return res.json({
+        success: true,
+        data: request,
+      });
+    }
+
     const request = await Request.findById(requestId);
 
     if (!request) {

@@ -6,6 +6,9 @@ interface UserData {
   role: 'donor' | 'requestor' | 'hospital' | null;
   verified: boolean;
   bloodType?: string;
+  email?: string;
+  phone?: string;
+  contactNumber?: string;
 }
 
 interface ProfileProps {
@@ -139,7 +142,7 @@ export function Profile({ user }: ProfileProps) {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
                   <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
                     <Mail className="w-5 h-5 text-gray-400" />
-                    <span className="text-gray-900">john.doe@example.com</span>
+                    <span className="text-gray-900">{user.email || 'john.doe@example.com'}</span>
                   </div>
                 </div>
 
@@ -147,7 +150,7 @@ export function Profile({ user }: ProfileProps) {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
                   <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
                     <Phone className="w-5 h-5 text-gray-400" />
-                    <span className="text-gray-900">+1 (555) 123-4567</span>
+                    <span className="text-gray-900">{user.contactNumber || user.phone || '+1 (555) 123-4567'}</span>
                   </div>
                 </div>
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
 import { LandingPage } from './components/LandingPage';
 import { FindBlood } from './components/FindBlood';
@@ -14,9 +14,13 @@ import { Notifications } from './components/Notifications';
 import { LoginModal } from './components/LoginModal';
 import { SignupModal } from './components/SignupModal';
 import { Footer } from './components/Footer';
+import { Campaigns } from './components/Campaigns';
 import { authAPI } from './services/authAPI';
+import { apiUrl } from './services/api';
+import { requestNotificationPermission, onForegroundMessage } from './services/firebase-config';
+import { toast, Toaster } from 'sonner';
 
-type Page = 'home' | 'find-blood' | 'become-donor' | 'hospitals' | 'hospitals-list' | 'education' | 'donor-dashboard' | 'requestor-dashboard' | 'hospital-panel' | 'hospital-profile' | 'profile' | 'notifications';
+type Page = 'home' | 'find-blood' | 'become-donor' | 'hospitals' | 'hospitals-list' | 'education' | 'campaigns' | 'donor-dashboard' | 'requestor-dashboard' | 'hospital-panel' | 'hospital-profile' | 'profile' | 'notifications';
 
 type UserRole = 'donor' | 'requestor' | 'hospital' | null;
 
@@ -47,6 +51,51 @@ export default function App() {
   const [showSignupModal, setShowSignupModal] = useState(false);
   const [user, setUser] = useState<User | null>(() => authAPI.getCurrentUser());
   const [pendingHospitalRequest, setPendingHospitalRequest] = useState<Hospital | null>(null);
+  const fcmTokenRef = useRef<string | null>(null);
+
+  // ─── FCM Registration ──────────────────────────────────────
+  // When a user logs in, request notification permission and register the FCM token.
+  useEffect(() => {
+    if (!user) return;
+
+    const userId = user.id || user._id;
+    if (!userId) return;
+
+    let unsubscribeForeground: (() => void) | undefined;
+
+    const registerFCM = async () => {
+      try {
+        const token = await requestNotificationPermission();
+        if (!token) return;
+
+        fcmTokenRef.current = token;
+
+        // Register token with backend
+        await fetch(apiUrl('/auth/fcm-token'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, token, deviceType: 'web' }),
+        });
+
+        console.log('FCM token registered with backend');
+
+        // Listen for foreground messages → show toast
+        unsubscribeForeground = onForegroundMessage((payload) => {
+          const title = payload?.notification?.title || 'HemoConnect';
+          const body = payload?.notification?.body || '';
+          toast(title, { description: body, duration: 6000 });
+        });
+      } catch (err) {
+        console.warn('FCM registration failed (non-blocking):', err);
+      }
+    };
+
+    registerFCM();
+
+    return () => {
+      if (unsubscribeForeground) unsubscribeForeground();
+    };
+  }, [user]);
 
   const handleLogin = (userData: User) => {
     setUser(userData);
@@ -89,7 +138,22 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Deregister FCM token before clearing session
+    const userId = user?.id || user?._id;
+    if (userId && fcmTokenRef.current) {
+      try {
+        await fetch(apiUrl('/auth/fcm-token'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, token: fcmTokenRef.current, action: 'remove' }),
+        });
+      } catch (err) {
+        console.warn('FCM token deregistration failed:', err);
+      }
+      fcmTokenRef.current = null;
+    }
+
     authAPI.logout();
     setUser(null);
     setPendingHospitalRequest(null);
@@ -98,6 +162,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
+      <Toaster position="top-right" richColors closeButton />
       <Header
         currentPage={currentPage}
         onNavigate={setCurrentPage}
@@ -108,7 +173,7 @@ export default function App() {
       />
       
       <main className="flex-1">
-        {currentPage === 'home' && <LandingPage onNavigate={setCurrentPage} onLogin={() => setShowLoginModal(true)} />}
+        {currentPage === 'home' && <LandingPage onNavigate={setCurrentPage} onLogin={() => setShowLoginModal(true)} onSignup={() => setShowSignupModal(true)} />}
         {currentPage === 'find-blood' && (
           <FindBlood 
             onNavigate={setCurrentPage} 
@@ -123,8 +188,9 @@ export default function App() {
         {currentPage === 'hospitals' && <HospitalList />}
         {currentPage === 'hospitals-list' && <HospitalList />}
         {currentPage === 'education' && <Education />}
+        {currentPage === 'campaigns' && <Campaigns user={user} onLogin={() => setShowLoginModal(true)} onSignup={() => setShowSignupModal(true)} />}
         {currentPage === 'donor-dashboard' && <DonorDashboard user={user} />}
-        {currentPage === 'requestor-dashboard' && <RequestorDashboard user={user} />}
+        {currentPage === 'requestor-dashboard' && <RequestorDashboard user={user} onNavigate={setCurrentPage} />}
         {currentPage === 'hospital-panel' && <HospitalPanel user={user} />}
         {currentPage === 'hospital-profile' && <HospitalProfile onLogout={handleLogout} onNavigate={setCurrentPage} />}
         {currentPage === 'profile' && <Profile user={user} />}

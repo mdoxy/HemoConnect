@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { Droplets, Bell, User, ChevronDown, LogOut, LayoutDashboard, UserCircle } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { Droplets, Bell, ChevronDown, LogOut, LayoutDashboard, UserCircle, Menu, X, Megaphone } from 'lucide-react';
 
-type Page = 'home' | 'find-blood' | 'become-donor' | 'hospitals' | 'hospitals-list' | 'education' | 'donor-dashboard' | 'requestor-dashboard' | 'hospital-panel' | 'hospital-profile' | 'profile' | 'notifications';
+type Page = 'home' | 'find-blood' | 'become-donor' | 'hospitals' | 'hospitals-list' | 'education' | 'campaigns' | 'donor-dashboard' | 'requestor-dashboard' | 'hospital-panel' | 'hospital-profile' | 'profile' | 'notifications';
 
 interface UserData {
   name: string;
@@ -21,6 +21,30 @@ interface HeaderProps {
 
 export function Header({ currentPage, onNavigate, user, onLogin, onSignup, onLogout }: HeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+
+  let navLinks: { label: string; page: Page; icon?: ReactNode }[] = [
+    { label: 'Home', page: 'home' },
+    { label: 'Find Blood', page: 'find-blood' },
+    { label: 'Become Donor', page: 'become-donor' },
+    { label: 'Hospitals', page: 'hospitals-list' },
+    { label: 'Awareness', page: 'education' },
+    { label: 'Campaigns', page: 'campaigns', icon: <Megaphone className="w-3.5 h-3.5" /> },
+  ];
+
+  if (user?.role === 'requestor') {
+    navLinks = [
+      { label: 'Dashboard', page: 'requestor-dashboard' },
+      { label: 'Awareness', page: 'education' },
+      { label: 'Campaigns', page: 'campaigns', icon: <Megaphone className="w-3.5 h-3.5" /> },
+    ];
+  } else if (user?.role === 'donor') {
+    navLinks = [
+      { label: 'Dashboard', page: 'donor-dashboard' },
+      { label: 'Awareness', page: 'education' },
+      { label: 'Campaigns', page: 'campaigns', icon: <Megaphone className="w-3.5 h-3.5" /> },
+    ];
+  }
 
   const getDashboardPage = (): Page => {
     if (user?.role === 'donor') return 'donor-dashboard';
@@ -36,7 +60,7 @@ export function Header({ currentPage, onNavigate, user, onLogin, onSignup, onLog
           {/* Logo */}
           <div 
             className="flex items-center gap-2 cursor-pointer group"
-            onClick={() => onNavigate('home')}
+            onClick={() => onNavigate(getDashboardPage())}
           >
             <div className="relative">
               <Droplets className="w-8 h-8 text-red-600 group-hover:text-red-700 transition-colors" fill="currentColor" />
@@ -50,62 +74,33 @@ export function Header({ currentPage, onNavigate, user, onLogin, onSignup, onLog
             </div>
           </div>
 
-          {/* Navigation Links */}
+          {/* Navigation Links - Desktop */}
           <nav className="hidden md:flex items-center gap-1">
-            <button
-              onClick={() => onNavigate('home')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                currentPage === 'home'
-                  ? 'text-red-600 bg-red-50'
-                  : 'text-gray-700 hover:text-red-600 hover:bg-gray-50'
-              }`}
-            >
-              Home
-            </button>
-            <button
-              onClick={() => onNavigate('find-blood')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                currentPage === 'find-blood'
-                  ? 'text-red-600 bg-red-50'
-                  : 'text-gray-700 hover:text-red-600 hover:bg-gray-50'
-              }`}
-            >
-              Find Blood
-            </button>
-            <button
-              onClick={() => onNavigate('become-donor')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                currentPage === 'become-donor'
-                  ? 'text-red-600 bg-red-50'
-                  : 'text-gray-700 hover:text-red-600 hover:bg-gray-50'
-              }`}
-            >
-              Become Donor
-            </button>
-            <button
-              onClick={() => onNavigate('hospitals-list')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                currentPage === 'hospitals-list'
-                  ? 'text-red-600 bg-red-50'
-                  : 'text-gray-700 hover:text-red-600 hover:bg-gray-50'
-              }`}
-            >
-              Hospitals
-            </button>
-            <button
-              onClick={() => onNavigate('education')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                currentPage === 'education'
-                  ? 'text-red-600 bg-red-50'
-                  : 'text-gray-700 hover:text-red-600 hover:bg-gray-50'
-              }`}
-            >
-              Awareness / Learn
-            </button>
+            {navLinks.map(({ label, page, icon }) => (
+              <button
+                key={page}
+                onClick={() => onNavigate(page)}
+                className={`flex items-center gap-1 px-4 py-2 rounded-lg font-medium transition-colors text-sm ${
+                  currentPage === page
+                    ? 'text-red-600 bg-red-50'
+                    : 'text-gray-700 hover:text-red-600 hover:bg-gray-50'
+                }`}
+              >
+                {icon}
+                {label}
+              </button>
+            ))}
           </nav>
 
           {/* Right Side - Auth / User Menu */}
           <div className="flex items-center gap-3">
+            {/* Mobile Menu Toggle */}
+            <button
+              onClick={() => setShowMobileMenu(!showMobileMenu)}
+              className="md:hidden p-2 text-gray-600 hover:text-red-600 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              {showMobileMenu ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
             {!user ? (
               <>
                 <button
@@ -211,6 +206,44 @@ export function Header({ currentPage, onNavigate, user, onLogin, onSignup, onLog
           </div>
         </div>
       </div>
+
+      {/* Mobile Menu Dropdown */}
+      {showMobileMenu && (
+        <div className="md:hidden bg-white border-t border-gray-200 shadow-lg">
+          <nav className="max-w-7xl mx-auto px-4 py-3 flex flex-col gap-1">
+            {navLinks.map(({ label, page, icon }) => (
+              <button
+                key={page}
+                onClick={() => { onNavigate(page); setShowMobileMenu(false); }}
+                className={`flex items-center gap-2 px-4 py-3 rounded-lg font-medium transition-colors text-left ${
+                  currentPage === page
+                    ? 'text-red-600 bg-red-50'
+                    : 'text-gray-700 hover:text-red-600 hover:bg-gray-50'
+                }`}
+              >
+                {icon}
+                {label}
+              </button>
+            ))}
+            {!user && (
+              <div className="flex gap-3 pt-3 border-t border-gray-100 mt-1">
+                <button
+                  onClick={() => { onLogin(); setShowMobileMenu(false); }}
+                  className="flex-1 py-2.5 text-center text-gray-700 font-medium border border-gray-300 rounded-lg hover:text-red-600 hover:border-red-300 transition-colors"
+                >
+                  Login
+                </button>
+                <button
+                  onClick={() => { onSignup(); setShowMobileMenu(false); }}
+                  className="flex-1 py-2.5 text-center bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  Sign Up
+                </button>
+              </div>
+            )}
+          </nav>
+        </div>
+      )}
     </header>
   );
 }
