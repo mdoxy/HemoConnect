@@ -2,8 +2,6 @@ import { useState, useEffect } from 'react';
 import { X, Mail, Lock, User, Phone, Droplet, Building2, Eye, EyeOff } from 'lucide-react';
 import { isValidIndianMobile, normalizeIndianMobile, getPhoneValidationErrorMessage } from '../utils/validation';
 import { authAPI } from '../services/authAPI';
-import { auth } from '../services/firebase';
-import { RecaptchaVerifier, signInWithPhoneNumber } from 'firebase/auth';
 
 interface SignupModalProps {
   onClose: () => void;
@@ -14,17 +12,13 @@ interface SignupModalProps {
 type UserRole = 'donor' | 'requestor' | 'hospital';
 
 export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalProps) {
-  const [step, setStep] = useState<'role' | 'details' | 'phone_verification' | 'email_verification'>('role');
+  const [step, setStep] = useState<'role' | 'details' | 'email_verification'>('role');
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
-  // Phone auth state
-  const [confirmationResult, setConfirmationResult] = useState<any>(null);
-  const [smsCode, setSmsCode] = useState('');
-  const [firebaseIdToken, setFirebaseIdToken] = useState('');
-  
+
   // Email auth state
   const [emailOtp, setEmailOtp] = useState('');
 
@@ -39,23 +33,6 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
     organizationName: '',
     licenseNumber: '',
   });
-
-  useEffect(() => {
-    // Cleanup recaptcha on unmount
-    return () => {
-      if ((window as any).recaptchaVerifier) {
-        (window as any).recaptchaVerifier.clear();
-      }
-    };
-  }, []);
-
-  const setupRecaptcha = () => {
-    if (!(window as any).recaptchaVerifier) {
-      (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-        size: 'invisible',
-      });
-    }
-  };
 
   const handleRoleSelect = (role: UserRole) => {
     setSelectedRole(role);
@@ -87,56 +64,16 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
     }
 
     setLoading(true);
-
-    try {
-      setupRecaptcha();
-      const normalizedPhone = normalizeIndianMobile(formData.phone) || formData.phone;
-      const appVerifier = (window as any).recaptchaVerifier;
-      
-      const confirmation = await signInWithPhoneNumber(auth, normalizedPhone, appVerifier);
-      setConfirmationResult(confirmation);
-      setStep('phone_verification');
-    } catch (err: any) {
-      console.error('SMS send error:', err);
-      setError(err.message || 'Failed to send SMS code. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+    await proceedToBackendSignup();
   };
 
-  const handlePhoneVerificationSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    
-    if (!smsCode) {
-      setError('Please enter the SMS code');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const result = await confirmationResult.confirm(smsCode);
-      const user = result.user;
-      const idToken = await user.getIdToken();
-      setFirebaseIdToken(idToken);
-      
-      // Now that phone is verified, hit our backend signup
-      await proceedToBackendSignup(idToken);
-    } catch (err: any) {
-      console.error('Phone verification error:', err);
-      setError('Invalid SMS code. Please try again.');
-      setLoading(false);
-    }
-  };
-
-  const proceedToBackendSignup = async (idToken: string) => {
+  const proceedToBackendSignup = async () => {
     try {
       const signupData: any = {
         name: formData.name,
         email: formData.email,
         password: formData.password,
         role: selectedRole,
-        firebaseIdToken: idToken,
       };
 
       const normalized = normalizeIndianMobile(formData.phone) || formData.phone;
@@ -205,8 +142,7 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
           
           <div className="flex items-center gap-2 mt-6">
             <div className={`flex-1 h-1.5 rounded-full ${step === 'role' ? 'bg-red-600' : 'bg-red-200'}`}></div>
-            <div className={`flex-1 h-1.5 rounded-full ${step === 'details' ? 'bg-red-600' : (step === 'phone_verification' || step === 'email_verification') ? 'bg-red-200' : 'bg-gray-200'}`}></div>
-            <div className={`flex-1 h-1.5 rounded-full ${step === 'phone_verification' ? 'bg-red-600' : step === 'email_verification' ? 'bg-red-200' : 'bg-gray-200'}`}></div>
+            <div className={`flex-1 h-1.5 rounded-full ${step === 'details' ? 'bg-red-600' : step === 'email_verification' ? 'bg-red-200' : 'bg-gray-200'}`}></div>
             <div className={`flex-1 h-1.5 rounded-full ${step === 'email_verification' ? 'bg-red-600' : 'bg-gray-200'}`}></div>
           </div>
         </div>
@@ -457,58 +393,12 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
               </div>
             )}
 
-            <div id="recaptcha-container"></div>
-
             <button
               type="submit"
               disabled={loading}
               className="w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 disabled:bg-gray-400 transition-colors shadow-sm hover:shadow-md"
             >
-              {loading ? 'Sending SMS...' : 'Continue to Phone Verification'}
-            </button>
-          </form>
-        )}
-
-        {step === 'phone_verification' && (
-          <form onSubmit={handlePhoneVerificationSubmit} className="px-8 pb-8 space-y-4">
-            <h3 className="font-semibold text-gray-900 mb-4">Verify Your Phone Number</h3>
-            <p className="text-gray-600 text-sm mb-4">
-              We've sent an SMS with a verification code to {formData.phone}. Please enter it below.
-            </p>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                SMS Verification Code *
-              </label>
-              <input
-                type="text"
-                value={smsCode}
-                onChange={(e) => setSmsCode(e.target.value)}
-                required
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 tracking-widest text-center text-xl"
-                placeholder="------"
-              />
-            </div>
-
-            {error && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm text-red-700">{error}</p>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 disabled:bg-gray-400 transition-colors"
-            >
-              {loading ? 'Verifying...' : 'Verify Phone'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setStep('details')}
-              className="w-full text-gray-500 text-sm hover:text-gray-700 mt-2"
-            >
-              Back to Details
+              {loading ? 'Processing...' : 'Continue to Email Verification'}
             </button>
           </form>
         )}

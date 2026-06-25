@@ -7,7 +7,6 @@ import mongoose from 'mongoose';
 import { body, validationResult } from 'express-validator';
 import { isValidIndianMobile, normalizeIndianMobile } from '../utils/phone.js';
 import { sendVerificationEmail } from '../services/notificationService.js';
-import { getAuth } from 'firebase-admin/auth';
 
 const router = express.Router();
 const memoryUsers = [];
@@ -93,7 +92,7 @@ router.post(
       }
 
       const {
-        name, email, password, role, bloodType, phone, location, hospitalName, contactNumber, firebaseIdToken
+        name, email, password, role, bloodType, phone, location, hospitalName, contactNumber
       } = req.body;
       const normalizedEmail = email.trim().toLowerCase();
 
@@ -109,16 +108,7 @@ router.post(
       }
 
       let phoneVerified = false;
-      if (firebaseIdToken) {
-        try {
-          const decodedToken = await getAuth().verifyIdToken(firebaseIdToken);
-          phoneVerified = true;
-          console.log(`Phone verified via Firebase for ${normalizedEmail}`);
-        } catch (err) {
-          console.error('Firebase token verification failed:', err);
-          return res.status(400).json({ message: 'Invalid phone verification token' });
-        }
-      }
+
 
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
       const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
