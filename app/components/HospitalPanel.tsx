@@ -2,13 +2,15 @@ import {
   CheckCircle, XCircle, Clock, Users, Droplet, AlertCircle, Eye,
   Bell, LayoutDashboard, ClipboardList, ListOrdered, Building2,
   Phone, Share2, Menu, X, AlertTriangle, Zap, Heart, ChevronDown,
-  Navigation, MapPin, Loader, RefreshCw, TrendingUp
+  Navigation, MapPin, Loader, RefreshCw, TrendingUp, Package, Brain
 } from 'lucide-react';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { HospitalApplicationManager } from './HospitalApplicationManager';
+import { BloodInventoryUpdate } from './BloodInventoryUpdate';
+import { AIForecastDashboard } from './AIForecastDashboard';
 import { apiUrl } from '../services/api';
 import { parseCSV, Hospital as BloodBank } from '../utils/csvParser';
 
@@ -49,7 +51,7 @@ interface HospitalPanelProps {
   user: User | null;
 }
 
-type Tab = 'dashboard' | 'blood-requests' | 'priority-queue' | 'nearby-requests' | 'map' | 'donor-applications';
+type Tab = 'dashboard' | 'blood-requests' | 'priority-queue' | 'nearby-requests' | 'map' | 'donor-applications' | 'blood-inventory' | 'ai-forecast';
 
 /* Priority engine response */
 interface PriorityQueueItem {
@@ -494,6 +496,8 @@ export function HospitalPanel({ user }: HospitalPanelProps) {
     { id: 'dashboard',          label: 'Overview',          icon: <LayoutDashboard className="w-4 h-4" /> },
     { id: 'blood-requests',     label: 'Blood Requests',    icon: <ClipboardList   className="w-4 h-4" />, badge: pendingBlood },
     { id: 'priority-queue',     label: 'Priority Queue',    icon: <ListOrdered     className="w-4 h-4" />, badge: criticalReqs || undefined },
+    { id: 'blood-inventory',    label: 'Blood Inventory',   icon: <Package         className="w-4 h-4" /> },
+    { id: 'ai-forecast',        label: 'AI Forecast',       icon: <Brain           className="w-4 h-4" /> },
     { id: 'nearby-requests',    label: 'Nearby Hospitals',  icon: <Building2       className="w-4 h-4" /> },
     { id: 'map',                label: 'Live Map',          icon: <MapPin          className="w-4 h-4" /> },
     { id: 'donor-applications', label: 'Donor Applications',icon: <Users           className="w-4 h-4" />, badge: pendingDonors || undefined },
@@ -1068,6 +1072,20 @@ export function HospitalPanel({ user }: HospitalPanelProps) {
             </div>
             <HospitalApplicationManager />
           </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════
+            BLOOD INVENTORY
+        ══════════════════════════════════════════════════════════ */}
+        {activeTab === 'blood-inventory' && (
+          <BloodInventoryUpdate user={user} />
+        )}
+
+        {/* ══════════════════════════════════════════════════════════
+            AI FORECAST
+        ══════════════════════════════════════════════════════════ */}
+        {activeTab === 'ai-forecast' && (
+          <AIForecastDashboard user={user} />
         )}
       </main>
 

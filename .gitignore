@@ -3,7 +3,7 @@ dist
 .env
 backend/.env
 backend/firebase-service-account.json
-python_priority_engine/__pycache__/
-python_priority_engine/.venv/
-python_priority_engine/venv/
+__pycache__/
+venv/
+.venv/
 .DS_Store

@@ -15,12 +15,13 @@ import { LoginModal } from './components/LoginModal';
 import { SignupModal } from './components/SignupModal';
 import { Footer } from './components/Footer';
 import { Campaigns } from './components/Campaigns';
+import { AIForecastDashboard } from './components/AIForecastDashboard';
 import { authAPI } from './services/authAPI';
 import { apiUrl } from './services/api';
 import { requestNotificationPermission, onForegroundMessage } from './services/firebase-config';
 import { toast, Toaster } from 'sonner';
 
-type Page = 'home' | 'find-blood' | 'become-donor' | 'hospitals' | 'hospitals-list' | 'education' | 'campaigns' | 'donor-dashboard' | 'requestor-dashboard' | 'hospital-panel' | 'hospital-profile' | 'profile' | 'notifications';
+type Page = 'home' | 'find-blood' | 'become-donor' | 'hospitals' | 'hospitals-list' | 'education' | 'campaigns' | 'donor-dashboard' | 'requestor-dashboard' | 'hospital-panel' | 'hospital-profile' | 'profile' | 'notifications' | 'ai-forecast';
 
 type UserRole = 'donor' | 'requestor' | 'hospital' | null;
 
@@ -195,6 +196,7 @@ export default function App() {
         {currentPage === 'hospital-profile' && <HospitalProfile onLogout={handleLogout} onNavigate={setCurrentPage} />}
         {currentPage === 'profile' && <Profile user={user} />}
         {currentPage === 'notifications' && <Notifications />}
+        {currentPage === 'ai-forecast' && <AIForecastDashboard user={user} />}
       </main>
       
       <Footer />
