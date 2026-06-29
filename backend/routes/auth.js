@@ -197,24 +197,17 @@ router.post(
 
       await user.save();
 
-      if (normalizedEmail === 'demo@hemoconnect.com') {
-        return res.status(201).json({ 
-          message: 'Demo mode active.', 
-          requireOTP: true, 
-          demoOtp: otp 
-        });
-      }
-
       try {
         await sendVerificationEmail(normalizedEmail, otp);
         return res.status(201).json({ message: 'Verification OTP sent to email', requireOTP: true });
       } catch (emailError) {
-        console.error('Email send failed, falling back to Demo Mode:', emailError.message);
-        return res.status(201).json({ 
-          message: 'Email failed (SMTP error). Demo mode active.', 
-          requireOTP: true, 
-          demoOtp: otp 
-        });
+        console.error('Email send failed, auto-verifying user:', emailError.message);
+        user.emailVerified = true;
+        user.emailOTP = undefined;
+        user.emailOTPExpires = undefined;
+        await user.save();
+        const token = jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+        return res.status(201).json({ message: 'Email skipped (SMTP error), account auto-verified', token, user: buildAuthResponse(user), requireOTP: false });
       }
     } catch (error) {
       console.error('❌ Signup error:', error);

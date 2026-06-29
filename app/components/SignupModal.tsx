@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { X, Mail, Lock, User, Phone, Droplet, Building2, Eye, EyeOff } from 'lucide-react';
 import { isValidIndianMobile, normalizeIndianMobile, getPhoneValidationErrorMessage } from '../utils/validation';
 import { authAPI } from '../services/authAPI';
-import { toast } from 'sonner';
 
 interface SignupModalProps {
   onClose: () => void;
@@ -18,7 +17,7 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  
+
 
   // Email auth state
   const [emailOtp, setEmailOtp] = useState('');
@@ -91,13 +90,6 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
       if (formData.organizationName) signupData.organizationName = formData.organizationName;
 
       const response = await authAPI.signup(signupData);
-      
-      if (response.demoOtp) {
-        toast.error('Email sending failed due to SMTP block. DEMO MODE ACTIVATED', {
-          description: `Your OTP is: ${response.demoOtp}`,
-          duration: 10000,
-        });
-      }
 
       if (response.requireOTP) {
         setStep('email_verification');
@@ -116,7 +108,7 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
   const handleEmailVerificationSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
+
     if (!emailOtp) {
       setError('Please enter the email OTP');
       return;
@@ -147,7 +139,7 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
         <div className="p-8 pb-6">
           <h2 className="text-3xl font-bold text-gray-900 mb-2">Join HemoConnect</h2>
           <p className="text-gray-600">Create your account and start saving lives</p>
-          
+
           <div className="flex items-center gap-2 mt-6">
             <div className={`flex-1 h-1.5 rounded-full ${step === 'role' ? 'bg-red-600' : 'bg-red-200'}`}></div>
             <div className={`flex-1 h-1.5 rounded-full ${step === 'details' ? 'bg-red-600' : step === 'email_verification' ? 'bg-red-200' : 'bg-gray-200'}`}></div>
