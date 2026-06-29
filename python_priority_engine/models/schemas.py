@@ -100,6 +100,7 @@ class EmergencyRequestCreate(BaseModel):
     longitude:      float       = Field(..., description="Request origin longitude")
     latitude:       float       = Field(..., description="Request origin latitude")
     notes:          Optional[str] = Field(None, max_length=500)
+    node_request_id: Optional[str] = Field(None, description="MongoDB ObjectId from Node backend")
 
     @model_validator(mode="after")
     def build_geo_location(self) -> "EmergencyRequestCreate":

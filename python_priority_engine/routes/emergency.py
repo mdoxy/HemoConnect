@@ -111,6 +111,7 @@ async def submit_emergency_request(
         "created_at":       now,
         "updated_at":       now,
         "notes":            payload.notes,
+        "node_request_id":  payload.node_request_id,
     }
 
     # ── Insert into MongoDB ───────────────────────────────────────
@@ -149,6 +150,7 @@ async def submit_emergency_request(
         urgency_level=payload.urgency_level,
         blood_group=payload.blood_group,
         status=RequestStatus.PENDING,
+        node_request_id=payload.node_request_id,
         message=(
             f"Emergency request submitted. "
             f"Priority score: {score:.1f}/100. "
@@ -345,28 +347,33 @@ async def update_request_status(
 
     try:
         obj_id = ObjectId(request_id)
+        query = {"$or": [{"_id": obj_id}, {"node_request_id": request_id}]}
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid request_id format")
+        query = {"node_request_id": request_id}
 
     result = await db["emergency_requests"].update_one(
-        {"_id": obj_id},
+        query,
         {"$set": {"status": status, "updated_at": datetime.now(timezone.utc)}},
     )
 
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Request not found")
 
+    # Fetch the document to get the true python _id (in case we used node_request_id)
+    updated_doc = await db["emergency_requests"].find_one(query)
+    true_python_id = str(updated_doc["_id"]) if updated_doc else request_id
+
     # Remove from heap if no longer pending
     if status in ("fulfilled", "cancelled"):
-        removed = queue.remove(request_id)
+        removed = queue.remove(true_python_id)
         logger.info(
-            f"Request {request_id[:8]}… → {status} | "
+            f"Request {true_python_id[:8]}… → {status} | "
             f"removed from queue: {removed}"
         )
 
     return {
         "success": True,
-        "request_id": request_id,
+        "request_id": true_python_id,
         "new_status": status,
         "queue_size": queue.size,
     }

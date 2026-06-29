@@ -443,6 +443,18 @@ export function HospitalPanel({ user }: HospitalPanelProps) {
         const data = await res.json();
         setBloodRequests(prev => prev.map(r => r._id === id ? data.request : r));
         toast(`✓ Request for ${name} approved`);
+        
+        // Remove from priority queue
+        try {
+          await fetch(`${PRIORITY_ENGINE_URL}/api/emergency/request/${id}/status`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'fulfilled' })
+          });
+          fetchPriorityQueue(true); // Refresh queue UI
+        } catch (e) {
+          console.error('Failed to update priority engine', e);
+        }
       }
     } catch { setError('Failed to approve'); }
   };
@@ -963,6 +975,22 @@ export function HospitalPanel({ user }: HospitalPanelProps) {
                           <div className="text-xs text-gray-500 mb-0.5">Priority Score</div>
                           {scoreBar(req.priority_score)}
                         </div>
+                      </div>
+                      
+                      {/* Accept/Reject Buttons directly in Priority Queue */}
+                      <div className="flex flex-col sm:flex-row items-center gap-2 flex-shrink-0">
+                        {req.node_request_id && req.status === 'pending' && (
+                          <>
+                            <button onClick={() => approveBloodRequest(req.node_request_id, req.patient_name || 'Emergency Patient')}
+                              className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors w-full sm:w-auto justify-center">
+                              <CheckCircle className="w-3.5 h-3.5" /> Approve
+                            </button>
+                            <button onClick={() => { setBloodRejectingId(req.node_request_id); setBloodRejectionReason(''); }}
+                              className="flex items-center gap-1.5 px-4 py-2 border border-red-300 text-red-600 rounded-xl text-xs font-bold hover:bg-red-50 transition-colors w-full sm:w-auto justify-center">
+                              <XCircle className="w-3.5 h-3.5" /> Reject
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
