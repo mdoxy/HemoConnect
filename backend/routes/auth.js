@@ -120,7 +120,7 @@ router.post(
         const account = await createMemoryAccount({
           name, hospitalName, email: normalizedEmail, password, role, bloodType, phone, location, contactNumber,
         });
-        
+
         account.emailOTP = otp;
         account.emailOTPExpires = otpExpires;
         account.emailVerified = false;
@@ -130,12 +130,12 @@ router.post(
           await sendVerificationEmail(normalizedEmail, otp);
           return res.status(201).json({ message: 'Verification OTP sent to email', requireOTP: true });
         } catch (emailError) {
-          console.error('Email send failed, falling back to Demo Mode:', emailError.message);
-          return res.status(201).json({ 
-            message: 'Email failed (SMTP error). Demo mode active.', 
-            requireOTP: true, 
-            demoOtp: otp 
-          });
+          console.error('Email send failed, auto-verifying memory account:', emailError.message);
+          account.emailVerified = true;
+          account.emailOTP = null;
+          account.emailOTPExpires = null;
+          const token = jwt.sign({ userId: account._id, role: account.role }, JWT_SECRET, { expiresIn: '7d' });
+          return res.status(201).json({ message: 'Email skipped (SMTP error), account auto-verified', token, user: toAuthResponse(account), requireOTP: false });
         }
       }
 
@@ -165,17 +165,18 @@ router.post(
           phoneVerified: phoneVerified,
         });
         await hospital.save();
-        
+
         try {
           await sendVerificationEmail(normalizedEmail, otp);
           return res.status(201).json({ message: 'Verification OTP sent to email', requireOTP: true });
         } catch (emailError) {
-          console.error('Email send failed, falling back to Demo Mode:', emailError.message);
-          return res.status(201).json({ 
-            message: 'Email failed (SMTP error). Demo mode active.', 
-            requireOTP: true, 
-            demoOtp: otp 
-          });
+          console.error('Email send failed, auto-verifying hospital:', emailError.message);
+          hospital.emailVerified = true;
+          hospital.emailOTP = undefined;
+          hospital.emailOTPExpires = undefined;
+          await hospital.save();
+          const token = jwt.sign({ userId: hospital._id, role: hospital.role }, JWT_SECRET, { expiresIn: '7d' });
+          return res.status(201).json({ message: 'Email skipped (SMTP error), account auto-verified', token, user: buildAuthResponse(hospital), requireOTP: false });
         }
       }
 
@@ -195,7 +196,15 @@ router.post(
       });
 
       await user.save();
-      
+
+      if (normalizedEmail === 'demo@hemoconnect.com') {
+        return res.status(201).json({ 
+          message: 'Demo mode active.', 
+          requireOTP: true, 
+          demoOtp: otp 
+        });
+      }
+
       try {
         await sendVerificationEmail(normalizedEmail, otp);
         return res.status(201).json({ message: 'Verification OTP sent to email', requireOTP: true });
