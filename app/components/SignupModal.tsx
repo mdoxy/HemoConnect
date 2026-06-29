@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Mail, Lock, User, Phone, Droplet, Building2, Eye, EyeOff } from 'lucide-react';
 import { isValidIndianMobile, normalizeIndianMobile, getPhoneValidationErrorMessage } from '../utils/validation';
 import { authAPI } from '../services/authAPI';
+import { toast } from 'sonner';
 
 interface SignupModalProps {
   onClose: () => void;
@@ -91,6 +92,13 @@ export function SignupModal({ onClose, onSignup, onSwitchToLogin }: SignupModalP
 
       const response = await authAPI.signup(signupData);
       
+      if (response.demoOtp) {
+        toast.error('Email sending failed due to SMTP block. DEMO MODE ACTIVATED', {
+          description: `Your OTP is: ${response.demoOtp}`,
+          duration: 10000,
+        });
+      }
+
       if (response.requireOTP) {
         setStep('email_verification');
       } else {

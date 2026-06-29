@@ -130,12 +130,12 @@ router.post(
           await sendVerificationEmail(normalizedEmail, otp);
           return res.status(201).json({ message: 'Verification OTP sent to email', requireOTP: true });
         } catch (emailError) {
-          console.error('Email send failed, auto-verifying memory account:', emailError.message);
-          account.emailVerified = true;
-          account.emailOTP = null;
-          account.emailOTPExpires = null;
-          const token = jwt.sign({ userId: account._id, role: account.role }, JWT_SECRET, { expiresIn: '7d' });
-          return res.status(201).json({ message: 'Email skipped (SMTP error), account auto-verified', token, user: toAuthResponse(account), requireOTP: false });
+          console.error('Email send failed, falling back to Demo Mode:', emailError.message);
+          return res.status(201).json({ 
+            message: 'Email failed (SMTP error). Demo mode active.', 
+            requireOTP: true, 
+            demoOtp: otp 
+          });
         }
       }
 
@@ -170,13 +170,12 @@ router.post(
           await sendVerificationEmail(normalizedEmail, otp);
           return res.status(201).json({ message: 'Verification OTP sent to email', requireOTP: true });
         } catch (emailError) {
-          console.error('Email send failed, auto-verifying hospital:', emailError.message);
-          hospital.emailVerified = true;
-          hospital.emailOTP = undefined;
-          hospital.emailOTPExpires = undefined;
-          await hospital.save();
-          const token = jwt.sign({ userId: hospital._id, role: hospital.role }, JWT_SECRET, { expiresIn: '7d' });
-          return res.status(201).json({ message: 'Email skipped (SMTP error), account auto-verified', token, user: buildAuthResponse(hospital), requireOTP: false });
+          console.error('Email send failed, falling back to Demo Mode:', emailError.message);
+          return res.status(201).json({ 
+            message: 'Email failed (SMTP error). Demo mode active.', 
+            requireOTP: true, 
+            demoOtp: otp 
+          });
         }
       }
 
@@ -201,13 +200,12 @@ router.post(
         await sendVerificationEmail(normalizedEmail, otp);
         return res.status(201).json({ message: 'Verification OTP sent to email', requireOTP: true });
       } catch (emailError) {
-        console.error('Email send failed, auto-verifying user:', emailError.message);
-        user.emailVerified = true;
-        user.emailOTP = undefined;
-        user.emailOTPExpires = undefined;
-        await user.save();
-        const token = jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-        return res.status(201).json({ message: 'Email skipped (SMTP error), account auto-verified', token, user: buildAuthResponse(user), requireOTP: false });
+        console.error('Email send failed, falling back to Demo Mode:', emailError.message);
+        return res.status(201).json({ 
+          message: 'Email failed (SMTP error). Demo mode active.', 
+          requireOTP: true, 
+          demoOtp: otp 
+        });
       }
     } catch (error) {
       console.error('❌ Signup error:', error);
