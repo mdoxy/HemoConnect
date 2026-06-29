@@ -127,17 +127,7 @@ export function LoginModal({ onClose, onLogin, onSwitchToSignup }: LoginModalPro
             {loading ? 'Logging in...' : 'Login'}
           </button>
 
-          {/* Demo Login */}
-          <div className="space-y-2">
-            <p className="text-xs text-gray-500 text-center">Quick Demo Login:</p>
-            <button
-              type="button"
-              onClick={() => onLogin({ name: 'City Hospital', role: 'hospital', verified: true })}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              Hospital Demo
-            </button>
-          </div>
+
 
           {/* Switch to Signup */}
           <p className="text-center text-sm text-gray-600">
