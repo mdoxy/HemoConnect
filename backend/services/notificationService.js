@@ -44,23 +44,36 @@ let emailTransporter = null;
 
 const SMTP_USER = process.env.SMTP_USER;
 const SMTP_PASS = process.env.SMTP_PASS;
+const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
+const SMTP_PORT = process.env.SMTP_PORT || 465;
 const FROM_EMAIL = process.env.FROM_EMAIL || SMTP_USER;
 
 if (SMTP_USER && SMTP_PASS) {
-  emailTransporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: SMTP_USER,
-      pass: SMTP_PASS,
-    },
-    connectionTimeout: 5000,
-    greetingTimeout: 5000,
-    socketTimeout: 5000,
-  });
+  const isGmail = SMTP_HOST === 'smtp.gmail.com' && !process.env.SMTP_HOST;
+  
+  emailTransporter = nodemailer.createTransport(
+    isGmail 
+      ? {
+          service: 'gmail',
+          auth: { user: SMTP_USER, pass: SMTP_PASS },
+          connectionTimeout: 5000,
+          greetingTimeout: 5000,
+          socketTimeout: 5000,
+        }
+      : {
+          host: SMTP_HOST,
+          port: Number(SMTP_PORT),
+          secure: Number(SMTP_PORT) === 465, // true for 465, false for 587
+          auth: { user: SMTP_USER, pass: SMTP_PASS },
+          connectionTimeout: 5000,
+          greetingTimeout: 5000,
+          socketTimeout: 5000,
+        }
+  );
 
   // Verify connection on startup
   emailTransporter.verify()
-    .then(() => console.log('✅ Nodemailer (Gmail SMTP) connected successfully'))
+    .then(() => console.log(`✅ Nodemailer (${isGmail ? 'Gmail' : SMTP_HOST}) connected successfully`))
     .catch((err) => console.error('❌ Nodemailer connection failed:', err.message));
 } else {
   console.warn('⚠️  SMTP_USER / SMTP_PASS not set. Email notifications will be disabled.');
