@@ -77,7 +77,7 @@ interface PriorityQueueResponse {
 /* ─────────────────────────────────────────────────────────────────────────────
    Constants
 ───────────────────────────────────────────────────────────────────────────── */
-const PRIORITY_ENGINE_URL = 'http://localhost:8000';
+const PRIORITY_ENGINE_URL = (import.meta.env.VITE_PRIORITY_ENGINE_URL as string | undefined)?.trim() || 'http://localhost:8000';
 const NEARBY_MOCK = [
   { id: '1', hospital: 'Apollo Hospitals',       blood: 'O-',  units: 4, lat: 18.5600, lng: 73.9200, urgency: 'critical' as const },
   { id: '2', hospital: 'Care Hospitals',          blood: 'AB+', units: 2, lat: 18.5100, lng: 73.8300, urgency: 'high'     as const },

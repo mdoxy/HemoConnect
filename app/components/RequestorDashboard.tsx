@@ -57,7 +57,7 @@ interface PriorityItem {
 
 type Tab = 'overview' | 'my-requests' | 'find-request' | 'track-status';
 
-const PRIORITY_ENGINE = 'http://localhost:8000';
+const PRIORITY_ENGINE = (import.meta.env.VITE_PRIORITY_ENGINE_URL as string | undefined)?.trim() || 'http://localhost:8000';
 
 /* ─── Helpers ────────────────────────────────────────────────────────────────── */
 function urgencyBadge(urgency: string) {

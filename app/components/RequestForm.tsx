@@ -187,7 +187,8 @@ export function RequestForm({ selectedBank, onClose, onNavigate, user }: Request
           latitude: selectedBank?.latitude ?? 18.5204,
           notes: formData.reason || '',
         };
-        const pyRes = await fetch('http://localhost:8000/api/emergency/request', {
+        const priorityEngineUrl = (import.meta.env.VITE_PRIORITY_ENGINE_URL as string | undefined)?.trim() || 'http://localhost:8000';
+        const pyRes = await fetch(`${priorityEngineUrl}/api/emergency/request`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(pyPayload),
