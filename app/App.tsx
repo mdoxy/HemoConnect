@@ -193,7 +193,7 @@ export default function App() {
         {currentPage === 'requestor-dashboard' && <RequestorDashboard user={user} onNavigate={setCurrentPage} />}
         {currentPage === 'hospital-panel' && <HospitalPanel user={user} />}
         {currentPage === 'hospital-profile' && <HospitalProfile onLogout={handleLogout} onNavigate={setCurrentPage} />}
-        {currentPage === 'profile' && <Profile user={user} />}
+        {currentPage === 'profile' && <Profile user={user} onUpdateUser={handleLoginSuccess} />}
         {currentPage === 'notifications' && <Notifications />}
       </main>
       

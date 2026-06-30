@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { User, Mail, Phone, MapPin, Droplet, Calendar, Shield, Upload, CheckCircle2, Clock, Award } from 'lucide-react';
+import { User, Mail, Phone, MapPin, Droplet, Calendar, Shield, Upload, CheckCircle2, Clock, Award, Save, X as XIcon } from 'lucide-react';
+import { authAPI } from '../services/authAPI';
 
 interface UserData {
+  _id: string;
   name: string;
   role: 'donor' | 'requestor' | 'hospital' | null;
   verified: boolean;
@@ -13,10 +15,38 @@ interface UserData {
 
 interface ProfileProps {
   user: UserData | null;
+  onUpdateUser?: (user: UserData) => void;
 }
 
-export function Profile({ user }: ProfileProps) {
+export function Profile({ user, onUpdateUser }: ProfileProps) {
   const [activeTab, setActiveTab] = useState<'details' | 'verification' | 'history' | 'privacy'>('details');
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: user?.name || '',
+    phone: user?.contactNumber || user?.phone || '',
+    bloodType: user?.bloodType || ''
+  });
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    try {
+      setIsSaving(true);
+      setErrorMsg(null);
+      const updatedData = await authAPI.updateProfile(user._id, editForm);
+      if (onUpdateUser) {
+        onUpdateUser(updatedData.user);
+      }
+      setSuccessMsg('Profile updated successfully!');
+      setIsEditing(false);
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to update profile');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   if (!user) {
     return (
@@ -33,11 +63,23 @@ export function Profile({ user }: ProfileProps) {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="bg-white border-b border-gray-200 relative">
+        {/* Alerts */}
+        {errorMsg && (
+          <div className="absolute top-0 left-0 right-0 bg-red-100 text-red-700 px-4 py-2 text-center text-sm font-medium">
+            {errorMsg}
+          </div>
+        )}
+        {successMsg && (
+          <div className="absolute top-0 left-0 right-0 bg-green-100 text-green-700 px-4 py-2 text-center text-sm font-medium">
+            {successMsg}
+          </div>
+        )}
+        
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-4">
           <div className="flex items-center gap-6">
             {/* Avatar */}
-            <div className="w-24 h-24 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center text-white text-3xl font-bold">
+            <div className="w-24 h-24 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center text-white text-3xl font-bold flex-shrink-0">
               {user.name.charAt(0).toUpperCase()}
             </div>
 
@@ -67,9 +109,39 @@ export function Profile({ user }: ProfileProps) {
             </div>
 
             {/* Edit Button */}
-            <button className="px-6 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
-              Edit Profile
-            </button>
+            {!isEditing ? (
+              <button 
+                onClick={() => {
+                  setEditForm({
+                    name: user.name || '',
+                    phone: user.contactNumber || user.phone || '',
+                    bloodType: user.bloodType || ''
+                  });
+                  setIsEditing(true);
+                }}
+                className="px-6 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Edit Profile
+              </button>
+            ) : (
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => setIsEditing(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2"
+                >
+                  <XIcon className="w-4 h-4" />
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className="px-6 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  <Save className="w-4 h-4" />
+                  {isSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -132,25 +204,43 @@ export function Profile({ user }: ProfileProps) {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-                  <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-transparent focus-within:border-red-300 focus-within:bg-white transition-colors">
                     <User className="w-5 h-5 text-gray-400" />
-                    <span className="text-gray-900">{user.name}</span>
+                    {isEditing ? (
+                      <input 
+                        type="text" 
+                        value={editForm.name} 
+                        onChange={(e) => setEditForm({...editForm, name: e.target.value})}
+                        className="bg-transparent border-none focus:ring-0 w-full text-gray-900 p-0"
+                      />
+                    ) : (
+                      <span className="text-gray-900">{user.name}</span>
+                    )}
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
-                  <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg opacity-75 cursor-not-allowed">
                     <Mail className="w-5 h-5 text-gray-400" />
-                    <span className="text-gray-900">{user.email || 'john.doe@example.com'}</span>
+                    <span className="text-gray-900">{user.email || 'john.doe@example.com'} (Cannot change)</span>
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
-                  <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-transparent focus-within:border-red-300 focus-within:bg-white transition-colors">
                     <Phone className="w-5 h-5 text-gray-400" />
-                    <span className="text-gray-900">{user.contactNumber || user.phone || '+1 (555) 123-4567'}</span>
+                    {isEditing ? (
+                      <input 
+                        type="text" 
+                        value={editForm.phone} 
+                        onChange={(e) => setEditForm({...editForm, phone: e.target.value})}
+                        className="bg-transparent border-none focus:ring-0 w-full text-gray-900 p-0"
+                      />
+                    ) : (
+                      <span className="text-gray-900">{user.contactNumber || user.phone || '+1 (555) 123-4567'}</span>
+                    )}
                   </div>
                 </div>
 
@@ -158,7 +248,25 @@ export function Profile({ user }: ProfileProps) {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Blood Type</label>
                   <div className="flex items-center gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
                     <Droplet className="w-5 h-5 text-red-600" />
-                    <span className="text-red-900 font-semibold">{user.bloodType || 'Not Set'}</span>
+                    {isEditing && user.role !== 'hospital' ? (
+                      <select 
+                        value={editForm.bloodType} 
+                        onChange={(e) => setEditForm({...editForm, bloodType: e.target.value})}
+                        className="bg-transparent border-none focus:ring-0 w-full text-red-900 font-semibold p-0"
+                      >
+                        <option value="">Select Blood Type</option>
+                        <option value="A+">A+</option>
+                        <option value="A-">A-</option>
+                        <option value="B+">B+</option>
+                        <option value="B-">B-</option>
+                        <option value="AB+">AB+</option>
+                        <option value="AB-">AB-</option>
+                        <option value="O+">O+</option>
+                        <option value="O-">O-</option>
+                      </select>
+                    ) : (
+                      <span className="text-red-900 font-semibold">{user.bloodType || 'Not Set'}</span>
+                    )}
                   </div>
                 </div>
               </div>
