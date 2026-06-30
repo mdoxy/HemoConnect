@@ -234,11 +234,16 @@ router.post('/verify-email', async (req, res) => {
 
     if (!isDatabaseReady()) {
       const account = getMemoryAccountByEmail(normalizedEmail);
-      if (!account || account.emailOTP !== otp) {
-        return res.status(400).json({ message: 'Invalid or expired OTP' });
-      }
-      if (new Date() > account.emailOTPExpires) {
-        return res.status(400).json({ message: 'OTP has expired' });
+      if (!account) return res.status(404).json({ message: 'User not found' });
+      
+      // MASTER OTP BYPASS
+      if (otp !== '000000') {
+        if (account.emailOTP !== otp) {
+          return res.status(400).json({ message: 'Invalid or expired OTP' });
+        }
+        if (new Date() > account.emailOTPExpires) {
+          return res.status(400).json({ message: 'OTP has expired' });
+        }
       }
       account.emailVerified = true;
       account.emailOTP = null;
@@ -255,8 +260,11 @@ router.post('/verify-email', async (req, res) => {
     const account = hospital || user;
     if (!account) return res.status(404).json({ message: 'User not found' });
 
-    if (account.emailOTP !== otp) return res.status(400).json({ message: 'Invalid OTP' });
-    if (new Date() > account.emailOTPExpires) return res.status(400).json({ message: 'OTP has expired' });
+    // MASTER OTP BYPASS FOR PRESENTATIONS
+    if (otp !== '000000') {
+      if (account.emailOTP !== otp) return res.status(400).json({ message: 'Invalid OTP' });
+      if (new Date() > account.emailOTPExpires) return res.status(400).json({ message: 'OTP has expired' });
+    }
 
     account.emailVerified = true;
     account.emailOTP = undefined;
