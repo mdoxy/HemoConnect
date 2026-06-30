@@ -35,12 +35,21 @@ export function Header({ currentPage, onNavigate, user, onLogin, onSignup, onLog
   if (user?.role === 'requestor') {
     navLinks = [
       { label: 'Dashboard', page: 'requestor-dashboard' },
+      { label: 'Find Blood', page: 'find-blood' },
+      { label: 'Hospitals', page: 'hospitals-list' },
       { label: 'Awareness', page: 'education' },
       { label: 'Campaigns', page: 'campaigns', icon: <Megaphone className="w-3.5 h-3.5" /> },
     ];
   } else if (user?.role === 'donor') {
     navLinks = [
       { label: 'Dashboard', page: 'donor-dashboard' },
+      { label: 'Hospitals', page: 'hospitals-list' },
+      { label: 'Awareness', page: 'education' },
+      { label: 'Campaigns', page: 'campaigns', icon: <Megaphone className="w-3.5 h-3.5" /> },
+    ];
+  } else if (user?.role === 'hospital') {
+    navLinks = [
+      { label: 'Dashboard', page: 'hospital-panel' },
       { label: 'Awareness', page: 'education' },
       { label: 'Campaigns', page: 'campaigns', icon: <Megaphone className="w-3.5 h-3.5" /> },
     ];

@@ -435,6 +435,14 @@ export function HospitalPanel({ user }: HospitalPanelProps) {
 
   const approveBloodRequest = async (id: string, name: string) => {
     try {
+      // Optimistically remove from priority queue UI instantly
+      setPriorityQueue(prev => prev ? {
+        ...prev,
+        processing_order: prev.processing_order.filter(r => r.request_id !== id),
+        top_request: prev.top_request?.request_id === id ? null : prev.top_request,
+        active_queue_size: Math.max(0, prev.active_queue_size - 1)
+      } : null);
+
       const res = await fetch(apiUrl(`/request/${id}`), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'Approved', hospitalRemarks: 'Approved by hospital' }),
@@ -444,7 +452,7 @@ export function HospitalPanel({ user }: HospitalPanelProps) {
         setBloodRequests(prev => prev.map(r => r._id === id ? data.request : r));
         toast(`✓ Request for ${name} approved`);
         
-        // Remove from priority queue
+        // Remove from priority queue backend
         try {
           await fetch(`${PRIORITY_ENGINE_URL}/api/emergency/request/${id}/status`, {
             method: 'PUT',
@@ -462,6 +470,14 @@ export function HospitalPanel({ user }: HospitalPanelProps) {
   const rejectBloodRequest = async () => {
     if (!bloodRejectingId || !bloodRejectionReason.trim()) { setError('Please provide rejection reason'); return; }
     try {
+      // Optimistically remove from priority queue UI instantly
+      setPriorityQueue(prev => prev ? {
+        ...prev,
+        processing_order: prev.processing_order.filter(r => r.request_id !== bloodRejectingId),
+        top_request: prev.top_request?.request_id === bloodRejectingId ? null : prev.top_request,
+        active_queue_size: Math.max(0, prev.active_queue_size - 1)
+      } : null);
+
       const res = await fetch(apiUrl(`/request/${bloodRejectingId}`), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'Rejected', rejectionReason: bloodRejectionReason }),
@@ -469,8 +485,21 @@ export function HospitalPanel({ user }: HospitalPanelProps) {
       if (res.ok) {
         const data = await res.json();
         setBloodRequests(prev => prev.map(r => r._id === bloodRejectingId ? data.request : r));
+        const idToRemove = bloodRejectingId;
         setBloodRejectingId(null); setBloodRejectionReason('');
         toast('Request rejected');
+
+        // Remove from priority queue backend
+        try {
+          await fetch(`${PRIORITY_ENGINE_URL}/api/emergency/request/${idToRemove}/status`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'rejected' })
+          });
+          fetchPriorityQueue(true); // Refresh queue UI
+        } catch (e) {
+          console.error('Failed to update priority engine', e);
+        }
       }
     } catch { setError('Failed to reject'); }
   };
